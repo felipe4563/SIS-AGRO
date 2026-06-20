@@ -4,6 +4,7 @@ import { ThemeProvider }     from './contexts/ThemeContext';
 import AdminProtectedRoute   from './components/AdminProtectedRoute';
 import AdminLayout           from './components/AdminLayout';
 
+import Landing        from './pages/Landing';
 import Login          from './pages/Login';
 import Dashboard      from './pages/Dashboard';
 import Empresas       from './pages/Empresas';
@@ -26,7 +27,7 @@ export default function App() {
       <ThemeProvider>
         <AdminAuthProvider>
           <Routes>
-            <Route path="/"              element={<Navigate to="/login" replace />} />
+            <Route path="/"              element={<Landing />} />
             <Route path="/login"         element={<Login />} />
             <Route path="/dashboard"     element={<PageRoute><Dashboard /></PageRoute>} />
             <Route path="/empresas"      element={<PageRoute><Empresas /></PageRoute>} />

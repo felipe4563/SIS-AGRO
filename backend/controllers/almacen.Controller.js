@@ -546,7 +546,7 @@ const importarInventario = async (req, res) => {
       } else {
         const [sucRes] = await db.promise().query(
           'INSERT INTO sucursal (id_empresa, nombre, direccion, ciudad, telefono, correo, activo) VALUES (?, ?, ?, ?, ?, ?, 1)',
-          [id_empresa, sucursal_nombre, null, null, null, null]
+          [id_empresa, sucursal_nombre, '', '', '', '']
         );
         id_sucursal = sucRes.insertId;
       }
