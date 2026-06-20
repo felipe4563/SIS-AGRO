@@ -535,16 +535,21 @@ const importarInventario = async (req, res) => {
     }
 
     try {
-      // Buscar sucursal (no se crea)
+      // Buscar sucursal o crearla si no existe
       const [sucRows] = await db.promise().query(
-        'SELECT id_sucursal FROM sucursal WHERE nombre = ? AND id_empresa = ? AND activo = 1 LIMIT 1',
+        'SELECT id_sucursal FROM sucursal WHERE nombre = ? AND id_empresa = ? LIMIT 1',
         [sucursal_nombre, id_empresa]
       );
-      if (sucRows.length === 0) {
-        resultado.errores.push({ fila, motivo: `Sucursal "${sucursal_nombre}" no encontrada` });
-        continue;
+      let id_sucursal;
+      if (sucRows.length > 0) {
+        id_sucursal = sucRows[0].id_sucursal;
+      } else {
+        const [sucRes] = await db.promise().query(
+          'INSERT INTO sucursal (id_empresa, nombre, direccion, ciudad, telefono, correo, activo) VALUES (?, ?, ?, ?, ?, ?, 1)',
+          [id_empresa, sucursal_nombre, null, null, null, null]
+        );
+        id_sucursal = sucRes.insertId;
       }
-      const id_sucursal = sucRows[0].id_sucursal;
 
       // Clasificación (find or create)
       let id_clasificacion = null;
