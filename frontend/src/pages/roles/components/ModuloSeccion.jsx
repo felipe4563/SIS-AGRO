@@ -1,13 +1,26 @@
 const ICONOS = {
-  dashboard:      '📊',
-  encomiendas:    '📦',
-  manifiestos:    '📋',
-  ordenes_salida: '🚗',
-  reportes:       '📈',
-  roles:          '🔐',
-  sectores:       '🗺',
-  sucursales:     '🏪',
-  usuarios:       '👥',
+  // Core
+  usuarios:               '👥',
+  sucursales:             '🏪',
+  productos:              '🌿',
+  clasificaciones:        '🏷️',
+  marcas:                 '🔖',
+  unidades:               '⚖️',
+  conversiones:           '🔁',
+  configuracion:          '⚙️',
+  // Plan
+  ventas:                 '🛒',
+  caja:                   '💰',
+  clientes:               '🤝',
+  almacen:                '🏚️',
+  proveedores:            '🚚',
+  compras:                '📥',
+  traslados:              '🔄',
+  movimientos:            '📒',
+  categorias_movimiento:  '🗂️',
+  creditos:               '💳',
+  roles:                  '🔐',
+  reportes:               '📊',
 };
 
 export default function ModuloSeccion({

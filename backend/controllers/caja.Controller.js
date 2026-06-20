@@ -1,14 +1,16 @@
 const db = require('../config/db');
 
 const listarCajas = async (req, res) => {
+  const id_empresa = req.user.id_empresa;
   try {
     const puedeVerTodas = req.user.permisos.includes('caja.ver_todas');
     let query = `SELECT c.*, s.nombre as sucursal_nombre
                  FROM caja c
-                 JOIN sucursal s ON c.id_sucursal = s.id_sucursal`;
-    const params = [];
+                 JOIN sucursal s ON c.id_sucursal = s.id_sucursal
+                 WHERE s.id_empresa = ?`;
+    const params = [id_empresa];
     if (!puedeVerTodas) {
-      query += ' WHERE c.id_sucursal = ?';
+      query += ' AND c.id_sucursal = ?';
       params.push(req.user.id_sucursal);
     }
     query += ' ORDER BY c.id_sucursal, c.nombre';
@@ -24,6 +26,7 @@ const crearCaja = async (req, res) => {
   const { nombre, descripcion, id_sucursal } = req.body;
   if (!nombre) return res.status(400).json({ error: 'El nombre es requerido' });
   const sucursal = id_sucursal || req.user.id_sucursal;
+  if (!sucursal) return res.status(400).json({ error: 'No se pudo determinar la sucursal. Selecciona una sucursal para esta caja.' });
   try {
     const [result] = await db.promise().query(
       'INSERT INTO caja (id_sucursal, nombre, descripcion) VALUES (?, ?, ?)',
@@ -38,12 +41,13 @@ const crearCaja = async (req, res) => {
 
 const editarCaja = async (req, res) => {
   const { id } = req.params;
-  const { nombre, descripcion } = req.body;
+  const { nombre, descripcion, id_sucursal } = req.body;
   if (!nombre) return res.status(400).json({ error: 'El nombre es requerido' });
   try {
+    const sucursal = id_sucursal || req.user.id_sucursal;
     await db.promise().query(
-      'UPDATE caja SET nombre = ?, descripcion = ? WHERE id_caja = ?',
-      [nombre.trim(), descripcion || null, id]
+      'UPDATE caja SET nombre = ?, descripcion = ?, id_sucursal = ? WHERE id_caja = ?',
+      [nombre.trim(), descripcion || null, sucursal, id]
     );
     return res.json({ mensaje: 'Caja actualizada' });
   } catch (err) {
@@ -67,6 +71,10 @@ const toggleCaja = async (req, res) => {
 };
 
 const listarTurnos = async (req, res) => {
+  if (!req.user.permisos.includes('caja.ver_historial')) {
+    return res.status(403).json({ error: 'Sin permiso para ver el historial de turnos' });
+  }
+  const id_empresa = req.user.id_empresa;
   try {
     const puedeVerTodas = req.user.permisos.includes('caja.ver_todas');
     let query = `SELECT ac.*, c.nombre as caja_nombre, s.nombre as sucursal_nombre,
@@ -74,10 +82,11 @@ const listarTurnos = async (req, res) => {
                  FROM apertura_cierre_caja ac
                  JOIN caja c ON ac.id_caja = c.id_caja
                  JOIN sucursal s ON ac.id_sucursal = s.id_sucursal
-                 JOIN usuario u ON ac.id_usuario = u.id_usuario`;
-    const params = [];
+                 JOIN usuario u ON ac.id_usuario = u.id_usuario
+                 WHERE s.id_empresa = ?`;
+    const params = [id_empresa];
     if (!puedeVerTodas) {
-      query += ' WHERE ac.id_sucursal = ?';
+      query += ' AND ac.id_sucursal = ?';
       params.push(req.user.id_sucursal);
     }
     query += ' ORDER BY ac.fecha_apertura DESC LIMIT 200';
@@ -150,6 +159,9 @@ const cerrarCaja = async (req, res) => {
       return res.status(404).json({ error: 'Turno no encontrado o ya cerrado' });
     }
     const turno = turnoRows[0];
+    if (turno.id_usuario !== req.user.id_usuario) {
+      return res.status(403).json({ error: 'Solo el cajero que abrió este turno puede cerrarlo' });
+    }
 
     const [ventasRows] = await db.promise().query(
       `SELECT COALESCE(SUM(total), 0) as total_efectivo
@@ -177,4 +189,43 @@ const cerrarCaja = async (req, res) => {
   }
 };
 
-module.exports = { listarCajas, crearCaja, editarCaja, toggleCaja, listarTurnos, obtenerTurnoActivo, abrirCaja, cerrarCaja };
+const listarMovimientosTurno = async (req, res) => {
+  try {
+    const [turnoRows] = await db.promise().query(
+      `SELECT * FROM apertura_cierre_caja WHERE id_sucursal = ? AND estado = 'ABIERTA' ORDER BY fecha_apertura DESC LIMIT 1`,
+      [req.user.id_sucursal]
+    );
+    if (turnoRows.length === 0) {
+      return res.json({ turno: null, movimientos: [] });
+    }
+    const turno = turnoRows[0];
+
+    const [rows] = await db.promise().query(
+      `SELECT 'VENTA' AS origen, 'INGRESO' AS tipo, v.total AS monto,
+              v.fecha_venta AS fecha,
+              CONCAT('Venta #', v.id_venta) AS descripcion,
+              v.nro_factura AS referencia
+       FROM venta v
+       WHERE v.id_sucursal = ? AND v.metodo_pago = 'EFECTIVO'
+         AND v.estado = 'COMPLETADA' AND v.fecha_venta >= ?
+
+       UNION ALL
+
+       SELECT 'MOVIMIENTO' AS origen, m.tipo, m.monto,
+              m.created_at AS fecha, m.descripcion, NULL AS referencia
+       FROM movimiento m
+       WHERE m.id_sucursal = ? AND m.created_at >= ?
+
+       ORDER BY fecha DESC`,
+      [req.user.id_sucursal, turno.fecha_apertura,
+       req.user.id_sucursal, turno.fecha_apertura]
+    );
+
+    return res.json({ turno, movimientos: rows });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Error al listar movimientos del turno' });
+  }
+};
+
+module.exports = { listarCajas, crearCaja, editarCaja, toggleCaja, listarTurnos, obtenerTurnoActivo, abrirCaja, cerrarCaja, listarMovimientosTurno };

@@ -30,7 +30,12 @@ export default function TablaCatalogos({
     );
   }
 
-  const tieneEstado = activeTab === 'clasificaciones' || activeTab === 'marcas';
+  const tieneEstado = activeTab === 'clasificaciones' || activeTab === 'marcas' || activeTab === 'conversiones';
+
+  const formatFactor = (factor) => {
+    const n = Number(factor);
+    return Number.isInteger(n) ? n.toString() : n.toFixed(2).replace(/\.?0+$/, '');
+  };
 
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
@@ -39,8 +44,11 @@ export default function TablaCatalogos({
           <thead>
             <tr className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-800 text-xs uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
               <th className="px-4 py-3 font-medium">Nombre</th>
-              {activeTab === 'marcas' && <th className="px-4 py-3 font-medium">País de Origen</th>}
-              {activeTab === 'unidades' && <th className="px-4 py-3 font-medium">Abreviatura</th>}
+              {activeTab === 'marcas'       && <th className="px-4 py-3 font-medium">País de Origen</th>}
+              {activeTab === 'unidades'     && <th className="px-4 py-3 font-medium">Abreviatura</th>}
+              {activeTab === 'conversiones' && <th className="px-4 py-3 font-medium">Abrev.</th>}
+              {activeTab === 'conversiones' && <th className="px-4 py-3 font-medium">Unidad Base</th>}
+              {activeTab === 'conversiones' && <th className="px-4 py-3 font-medium text-center">Factor</th>}
               {(activeTab === 'clasificaciones' || activeTab === 'marcas') && (
                 <th className="px-4 py-3 font-medium hidden md:table-cell">Descripción</th>
               )}
@@ -50,7 +58,7 @@ export default function TablaCatalogos({
           </thead>
           <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
             {datos.map((item) => {
-              const id = item.id_clasificacion || item.id_marca || item.id_unidad;
+              const id = item.id_clasificacion || item.id_marca || item.id_unidad || item.id_conversion;
               return (
                 <tr key={id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
                   <td className="px-4 py-3">
@@ -58,7 +66,7 @@ export default function TablaCatalogos({
                       {item.nombre}
                     </p>
                   </td>
-                  
+
                   {activeTab === 'marcas' && (
                     <td className="px-4 py-3 text-sm text-zinc-600 dark:text-zinc-400">
                       {item.pais_origen || '—'}
@@ -71,13 +79,32 @@ export default function TablaCatalogos({
                     </td>
                   )}
 
+                  {activeTab === 'conversiones' && (
+                    <td className="px-4 py-3 text-sm text-zinc-500 dark:text-zinc-400">
+                      {item.abreviatura}
+                    </td>
+                  )}
+                  {activeTab === 'conversiones' && (
+                    <td className="px-4 py-3 text-sm text-zinc-600 dark:text-zinc-300">
+                      {item.unidad_base_nombre}
+                      <span className="ml-1 text-xs text-zinc-400">({item.unidad_base_abreviatura})</span>
+                    </td>
+                  )}
+                  {activeTab === 'conversiones' && (
+                    <td className="px-4 py-3 text-center">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">
+                        x{formatFactor(item.factor)}
+                      </span>
+                    </td>
+                  )}
+
                   {(activeTab === 'clasificaciones' || activeTab === 'marcas') && (
                     <td className="px-4 py-3 hidden md:table-cell text-sm text-zinc-500 dark:text-zinc-500 truncate max-w-xs">
                       {item.descripcion || '—'}
                     </td>
                   )}
 
-                  {tieneEstado && (
+                  {tieneEstado && activeTab !== 'conversiones' && (
                     <td className="px-4 py-3 text-center">
                       {puede('editar', activeTab) ? (
                         <button
@@ -99,6 +126,32 @@ export default function TablaCatalogos({
                             item.activo ? 'bg-emerald-500' : 'bg-zinc-400'
                           }`}
                           title={item.activo ? 'Activo' : 'Inactivo'}
+                        />
+                      )}
+                    </td>
+                  )}
+
+                  {activeTab === 'conversiones' && (
+                    <td className="px-4 py-3 text-center">
+                      {puede('editar', 'conversiones') ? (
+                        <button
+                          onClick={() => onToggleActivo(item)}
+                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
+                            item.activo ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600'
+                          }`}
+                          title={item.activo ? 'Desactivar' : 'Activar'}
+                        >
+                          <span
+                            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                              item.activo ? 'translate-x-4' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      ) : (
+                        <span
+                          className={`inline-block h-3.5 w-3.5 rounded-full ${
+                            item.activo ? 'bg-emerald-500' : 'bg-zinc-400'
+                          }`}
                         />
                       )}
                     </td>

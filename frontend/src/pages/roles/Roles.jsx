@@ -4,6 +4,53 @@ import ListaRoles      from './components/ListaRoles';
 import GestionPermisos from './components/GestionPermisos';
 import { ModalCrear, ModalEditar, ModalEliminar } from './components/RolModals';
 import rolService from '../../services/rol.service';
+import { useAuth } from '../../contexts/AuthContext';
+
+// Módulos de permiso siempre visibles (gestión interna de la empresa)
+const MODULOS_CORE = new Set([
+  'usuarios', 'sucursales', 'clasificaciones', 'marcas',
+  'unidades', 'conversiones', 'productos', 'configuracion',
+]);
+
+// Mapeo: módulo del plan → módulos de la tabla permiso
+const PLAN_A_PERMISO = {
+  ventas:             ['ventas', 'creditos'],
+  caja:               ['caja'],
+  clientes:           ['clientes'],
+  inventario:         ['almacen'],
+  proveedores:        ['proveedores'],
+  compras:            ['compras', 'creditos'],
+  traslados:          ['traslados'],
+  libro_caja:         ['movimientos', 'categorias_movimiento'],
+  roles:              ['roles'],
+  reportes_basicos:   ['reportes'],
+  reportes_avanzados: ['reportes'],
+};
+
+// IDs exclusivos de reportes avanzados — se ocultan si el plan no los incluye
+const IDS_REPORTES_AVANZADOS = new Set([111, 112, 117, 118]);
+
+function filtrarPermisosPlan(permisosPorMod, planModulos) {
+  const permitidos = new Set(MODULOS_CORE);
+  for (const mod of planModulos) {
+    (PLAN_A_PERMISO[mod] ?? []).forEach(m => permitidos.add(m));
+  }
+
+  const tieneAvanzados = planModulos.includes('reportes_avanzados');
+
+  return Object.fromEntries(
+    Object.entries(permisosPorMod)
+      .filter(([mod]) => permitidos.has(mod))
+      .map(([mod, permisos]) => {
+        // Dentro de reportes, filtrar los avanzados si el plan no los incluye
+        if (mod === 'reportes' && !tieneAvanzados) {
+          return [mod, permisos.filter(p => !IDS_REPORTES_AVANZADOS.has(p.id_permiso))];
+        }
+        return [mod, permisos];
+      })
+      .filter(([, permisos]) => permisos.length > 0)
+  );
+}
 
 // ── Toast ─────────────────────────────────────────────────────────────────
 function Toast({ toast }) {
@@ -24,6 +71,9 @@ function Toast({ toast }) {
 
 // ═════════════════════════════════════════════════════════════════════════
 export default function Roles() {
+  const { usuario } = useAuth();
+  const planModulos = Array.isArray(usuario?.modulos) ? usuario.modulos : [];
+
   // ── Datos ────────────────────────────────────────────────────────────
   const [roles,          setRoles]          = useState([]);
   const [rolActivo,      setRolActivo]      = useState(null);
@@ -282,7 +332,7 @@ export default function Roles() {
                          }`}>
           <GestionPermisos
             rolActivo={rolActivo}
-            permisosPorMod={permisosPorMod}
+            permisosPorMod={filtrarPermisosPlan(permisosPorMod, planModulos)}
             seleccionados={seleccionados}
             setSeleccionados={setSeleccionados}
             hayCambios={hayCambios}

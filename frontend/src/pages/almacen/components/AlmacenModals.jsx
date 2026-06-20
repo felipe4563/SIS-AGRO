@@ -61,7 +61,7 @@ export function ModalEntrada({ onConfirm, onClose, guardando }) {
               <option value="">Seleccione un producto...</option>
               {productos.map(p => (
                 <option key={p.id_producto} value={p.id_producto}>
-                  {p.nombre} {p.codigo_barras ? `(${p.codigo_barras})` : ''}
+                  {p.nombre}
                 </option>
               ))}
             </select>

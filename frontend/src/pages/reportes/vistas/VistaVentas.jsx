@@ -95,7 +95,6 @@ export default function VistaVentas() {
         ];
       case 'producto':
         return [
-          { key: 'codigo_barras',    header: 'Código',                    render: v => v || 'N/A' },
           { key: 'nombre',           header: 'Producto' },
           { key: 'unidades_vendidas',header: 'Unidades Vendidas',         align: 'center' },
           { key: 'total_generado',   header: 'Ingresos Generados (Bs)',   align: 'right', render: v => parseFloat(v).toFixed(2), excelValue: r => parseFloat(r.total_generado) }

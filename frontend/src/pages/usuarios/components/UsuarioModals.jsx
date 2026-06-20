@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { usePermission } from '../../../hooks/usePermission';
 
 // ── Modal Crear/Editar ───────────────────────────────────────────────────
 export function ModalCrearEditar({
@@ -9,6 +10,7 @@ export function ModalCrearEditar({
   onClose,
   guardando
 }) {
+  const { puede } = usePermission();
   const isEditing = !!usuario;
   
   const [formData, setFormData] = useState({
@@ -151,7 +153,9 @@ export function ModalCrearEditar({
                 required
                 value={formData.id_rol}
                 onChange={handleChange}
-                className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 outline-none transition-all"
+                disabled={isEditing && !puede('cambiar_rol', 'usuarios')}
+                title={isEditing && !puede('cambiar_rol', 'usuarios') ? 'No tienes permiso para cambiar el rol' : undefined}
+                className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <option value="">Seleccione un rol...</option>
                 {roles.map(r => (
@@ -187,7 +191,9 @@ export function ModalCrearEditar({
                 name="id_sucursal"
                 value={formData.id_sucursal}
                 onChange={handleChange}
-                className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 outline-none transition-all"
+                disabled={isEditing && !puede('cambiar_sucursal', 'usuarios')}
+                title={isEditing && !puede('cambiar_sucursal', 'usuarios') ? 'No tienes permiso para cambiar la sucursal' : undefined}
+                className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <option value="">Ninguna / Matriz</option>
                 {sucursales.map(s => (

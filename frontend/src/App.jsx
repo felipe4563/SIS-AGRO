@@ -20,7 +20,8 @@ import Clientes       from './pages/clientes/Clientes';
 import Proveedores    from './pages/proveedores/Proveedores';
 import Compras        from './pages/compras/Compras';
 import NuevaCompra    from './pages/compras/NuevaCompra';
-import Almacen        from './pages/almacen/Almacen';
+import Almacen             from './pages/almacen/Almacen';
+import ImportarInventario  from './pages/almacen/ImportarInventario';
 import HistorialVentas from './pages/ventas/HistorialVentas';
 import NuevaVenta     from './pages/ventas/NuevaVenta';
 import VentaTicket    from './pages/ventas/VentaTicket';
@@ -29,6 +30,8 @@ import LayoutReportes from './pages/reportes/LayoutReportes';
 import Backups        from './pages/backups/Backups';
 import Configuracion from './pages/configuracion/Configuracion';
 import LibroCaja from './pages/libroCaja/LibroCaja';
+import Onboarding from './pages/onboarding/Onboarding';
+import LayoutCreditos from './pages/creditos/LayoutCreditos';
 
 // Nota: Reportes/Órdenes de salida aún no están integrados aquí.
 
@@ -78,6 +81,13 @@ export default function App() {
             <Route path="/login"       element={<Login />} />
             <Route path="/sin-permiso" element={<SinPermiso />} />
 
+            {/* ── Onboarding (autenticado, sin sidebar ni permisos) ───── */}
+            <Route path="/onboarding" element={
+              <ProtectedRoute>
+                <Onboarding />
+              </ProtectedRoute>
+            } />
+
             {/* ── Roles y permisos ────────────────────────────────────── */}
             <Route path="/roles" element={
               <PageRoute action="ver" subject="roles">
@@ -108,7 +118,12 @@ export default function App() {
 
             {/* ── Catálogos ────────────────────────────────────────────── */}
             <Route path="/catalogos" element={
-              <PageRoute action="ver" subject="clasificaciones">
+              <PageRoute anyPermission={[
+                { action: 'ver', subject: 'clasificaciones' },
+                { action: 'ver', subject: 'marcas'          },
+                { action: 'ver', subject: 'unidades'        },
+                { action: 'ver', subject: 'conversiones'    },
+              ]}>
                 <Catalogos />
               </PageRoute>
             }/>
@@ -143,6 +158,11 @@ export default function App() {
             <Route path="/almacen" element={
               <PageRoute action="ver" subject="almacen">
                 <Almacen />
+              </PageRoute>
+            }/>
+            <Route path="/almacen/importar" element={
+              <PageRoute action="importar" subject="almacen">
+                <ImportarInventario />
               </PageRoute>
             }/>
 
@@ -214,6 +234,13 @@ export default function App() {
               </PageRoute>
             }/>
 
+            {/* ── Créditos ───────────────────────────────────────────────── */}
+            <Route path="/creditos" element={
+              <PageRoute action="ver" subject="creditos">
+                <LayoutCreditos />
+              </PageRoute>
+            }/>
+
             {/* ── Libro de Caja ──────────────────────────────────────────── */}
             <Route path="/libro-caja" element={
               <PageRoute action="ver" subject="movimientos">
@@ -229,8 +256,7 @@ export default function App() {
             }/>
 
 
-            {/* ── Redirigir raíz y rutas desconocidas ─────────────────── */}
-            <Route path="/"  element={<Navigate to="/dashboard" replace />} />
+            {/* ── Rutas desconocidas ──────────────────────────────────── */}
             <Route path="*"  element={<Navigate to="/dashboard" replace />} />
 
           </Routes>

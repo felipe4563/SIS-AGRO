@@ -1,9 +1,11 @@
-const db = require('../config/db');
+const db   = require('../config/db');
+const XLSX = require('xlsx');
 
 const listarLotes = async (req, res) => {
+  const id_empresa = req.user.id_empresa;
   try {
     const [rows] = await db.promise().query(
-      `SELECT l.*, p.nombre as producto_nombre, p.codigo_barras, p.stock_minimo,
+      `SELECT l.*, p.nombre as producto_nombre, p.stock_minimo,
               p.precio_menor, p.precio_mayor, p.descuento_menor, p.descuento_mayor,
               m.nombre as marca_nombre, c.nombre as clasificacion_nombre,
               s.nombre as sucursal_nombre
@@ -12,9 +14,12 @@ const listarLotes = async (req, res) => {
        JOIN sucursal s ON l.id_sucursal = s.id_sucursal
        LEFT JOIN marca m ON p.id_marca = m.id_marca
        LEFT JOIN clasificacion_producto c ON p.id_clasificacion = c.id_clasificacion
-       WHERE l.activo = 1
-       ORDER BY l.fecha_vencimiento ASC, l.id_lote DESC`
+       WHERE l.activo = 1 AND s.id_empresa = ?
+       ORDER BY l.fecha_vencimiento ASC, l.id_lote DESC`,
+      [id_empresa]
     );
+    const verCosto = req.user.permisos.includes('almacen.ver_costo_lote');
+    if (!verCosto) rows.forEach(r => { delete r.precio_por_caja; });
     return res.json(rows);
   } catch (err) {
     console.error('[listarLotes]', err);
@@ -43,7 +48,8 @@ const obtenerLote = async (req, res) => {
        ORDER BY m.fecha_movimiento DESC`,
       [id]
     );
-    lote.movimientos = movimientos;
+    lote.movimientos = req.user.permisos.includes('almacen.ver_movimientos') ? movimientos : [];
+    if (!req.user.permisos.includes('almacen.ver_costo_lote')) delete lote.precio_por_caja;
     return res.json(lote);
   } catch (err) {
     console.error('[obtenerLote]', err);
@@ -187,6 +193,7 @@ const darBajaLote = async (req, res) => {
 };
 
 const listarTraslados = async (req, res) => {
+  const id_empresa = req.user.id_empresa;
   try {
     const [rows] = await db.promise().query(
       `SELECT t.*,
@@ -201,8 +208,10 @@ const listarTraslados = async (req, res) => {
        JOIN sucursal s_orig ON l.id_sucursal = s_orig.id_sucursal
        JOIN sucursal s_dest ON t.id_sucursal_dest = s_dest.id_sucursal
        LEFT JOIN usuario u ON t.id_usuario = u.id_usuario
+       WHERE s_orig.id_empresa = ?
        ORDER BY t.fecha_traslado DESC
-       LIMIT 100`
+       LIMIT 100`,
+      [id_empresa]
     );
     return res.json(rows);
   } catch (err) {
@@ -263,13 +272,18 @@ const crearTraslado = async (req, res) => {
 const confirmarTraslado = async (req, res) => {
   const { id } = req.params;
   const id_usuario = req.user.id_usuario;
+  const id_empresa = req.user.id_empresa;
 
   const conn = await db.promise().getConnection();
   try {
     await conn.beginTransaction();
     const [trasRows] = await conn.query(
-      'SELECT * FROM traslado WHERE id_traslado = ? AND estado = "PENDIENTE" FOR UPDATE',
-      [id]
+      `SELECT t.* FROM traslado t
+       JOIN lote l ON t.id_lote_origen = l.id_lote
+       JOIN sucursal s ON l.id_sucursal = s.id_sucursal
+       WHERE t.id_traslado = ? AND t.estado = 'PENDIENTE' AND s.id_empresa = ?
+       FOR UPDATE`,
+      [id, id_empresa]
     );
     if (trasRows.length === 0) throw new Error('Traslado no encontrado o ya procesado');
 
@@ -340,12 +354,17 @@ const confirmarTraslado = async (req, res) => {
 
 const cancelarTraslado = async (req, res) => {
   const { id } = req.params;
+  const id_empresa = req.user.id_empresa;
   const conn = await db.promise().getConnection();
   try {
     await conn.beginTransaction();
     const [rows] = await conn.query(
-      'SELECT id_traslado FROM traslado WHERE id_traslado = ? AND estado = "PENDIENTE" FOR UPDATE',
-      [id]
+      `SELECT t.id_traslado FROM traslado t
+       JOIN lote l ON t.id_lote_origen = l.id_lote
+       JOIN sucursal s ON l.id_sucursal = s.id_sucursal
+       WHERE t.id_traslado = ? AND t.estado = 'PENDIENTE' AND s.id_empresa = ?
+       FOR UPDATE`,
+      [id, id_empresa]
     );
     if (rows.length === 0) throw new Error('Traslado no encontrado o ya procesado');
     await conn.query('UPDATE traslado SET estado = "CANCELADO" WHERE id_traslado = ?', [id]);
@@ -361,6 +380,7 @@ const cancelarTraslado = async (req, res) => {
 };
 
 const listarAlertas = async (req, res) => {
+  const id_empresa = req.user.id_empresa;
   try {
     const [bajoStock] = await db.promise().query(
       `SELECT l.id_lote, l.numero_lote, l.stock_unidades, l.id_sucursal,
@@ -370,7 +390,9 @@ const listarAlertas = async (req, res) => {
        JOIN producto p ON l.id_producto = p.id_producto
        JOIN sucursal s ON l.id_sucursal = s.id_sucursal
        WHERE l.activo = 1 AND p.stock_minimo > 0 AND l.stock_unidades < p.stock_minimo
-       ORDER BY l.stock_unidades ASC`
+         AND s.id_empresa = ?
+       ORDER BY l.stock_unidades ASC`,
+      [id_empresa]
     );
     const [proxVencer] = await db.promise().query(
       `SELECT l.id_lote, l.numero_lote, l.fecha_vencimiento, l.stock_unidades,
@@ -383,7 +405,9 @@ const listarAlertas = async (req, res) => {
        WHERE l.activo = 1 AND l.fecha_vencimiento IS NOT NULL
          AND l.fecha_vencimiento <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
          AND l.stock_unidades > 0
-       ORDER BY l.fecha_vencimiento ASC`
+         AND s.id_empresa = ?
+       ORDER BY l.fecha_vencimiento ASC`,
+      [id_empresa]
     );
     return res.json({ bajo_stock: bajoStock, prox_vencer: proxVencer });
   } catch (err) {
@@ -393,9 +417,11 @@ const listarAlertas = async (req, res) => {
 };
 
 const listarProductosActivos = async (req, res) => {
+  const id_empresa = req.user.id_empresa;
   try {
     const [rows] = await db.promise().query(
-      'SELECT id_producto, nombre, codigo_barras FROM producto WHERE activo = 1 ORDER BY nombre ASC'
+      'SELECT id_producto, nombre FROM producto WHERE activo = 1 AND id_empresa = ? ORDER BY nombre ASC',
+      [id_empresa]
     );
     return res.json(rows);
   } catch (err) {
@@ -405,15 +431,199 @@ const listarProductosActivos = async (req, res) => {
 };
 
 const listarSucursalesActivas = async (req, res) => {
+  const id_empresa = req.user.id_empresa;
   try {
     const [rows] = await db.promise().query(
-      'SELECT id_sucursal, nombre FROM sucursal WHERE activo = 1 ORDER BY nombre ASC'
+      'SELECT id_sucursal, nombre FROM sucursal WHERE activo = 1 AND id_empresa = ? ORDER BY nombre ASC',
+      [id_empresa]
     );
     return res.json(rows);
   } catch (err) {
     console.error('[listarSucursalesActivas]', err);
     return res.status(500).json({ error: 'Error al obtener sucursales' });
   }
+};
+
+// ── Importar inventario desde Excel ──────────────────────────────────────────
+
+const parseDate = (val) => {
+  if (!val) return null;
+  if (typeof val === 'number') {
+    // Número de serie Excel → fecha
+    const d = XLSX.SSF.parse_date_code(val);
+    if (!d) return null;
+    return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+  }
+  const str = String(val).trim();
+  // DD/MM/AAAA
+  const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  // AAAA-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  return null;
+};
+
+const findOrCreate = async (db, table, pkCol, empresa, nombre) => {
+  const nombreTrim = String(nombre).trim();
+  const [rows] = await db.promise().query(
+    `SELECT ${pkCol} FROM \`${table}\` WHERE nombre = ? AND id_empresa = ? LIMIT 1`,
+    [nombreTrim, empresa]
+  );
+  if (rows.length > 0) return { id: rows[0][pkCol], created: false };
+  const [result] = await db.promise().query(
+    `INSERT INTO \`${table}\` (id_empresa, nombre) VALUES (?, ?)`,
+    [empresa, nombreTrim]
+  );
+  return { id: result.insertId, created: true };
+};
+
+const importarInventario = async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo' });
+
+  const id_empresa  = req.user.id_empresa;
+  const id_usuario  = req.user.id_usuario;
+
+  let workbook;
+  try {
+    workbook = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: false });
+  } catch {
+    return res.status(400).json({ error: 'Archivo Excel inválido o corrupto' });
+  }
+
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows  = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+  // Fila 0 = encabezados, Fila 1 = descripciones → datos desde fila 2
+  const dataRows = rows.slice(2).filter(r => r.some(c => String(c).trim() !== ''));
+
+  const resultado = { procesados: 0, lotes_creados: 0, productos_creados: 0, errores: [] };
+
+  for (let i = 0; i < dataRows.length; i++) {
+    const fila = i + 3; // número de fila real en Excel
+    const r    = dataRows[i];
+
+    const nombre_producto        = String(r[0]  ?? '').trim();
+    const clasificacion_nombre   = String(r[1]  ?? '').trim();
+    const marca_nombre           = String(r[2]  ?? '').trim();
+    const unidad_nombre          = String(r[3]  ?? '').trim();
+    const precio_mayor           = parseFloat(r[4])  || 0;
+    const precio_menor           = parseFloat(r[5])  || 0;
+    const sucursal_nombre        = String(r[6]  ?? '').trim();
+    const numero_lote            = String(r[7]  ?? '').trim() || null;
+    const fecha_vencimiento      = parseDate(r[8]);
+    const fecha_produccion       = parseDate(r[9]);
+    const fecha_ingreso          = parseDate(r[10]);
+    const cantidad_cajas         = parseInt(r[11]) || 0;
+    const unidades_por_caja      = parseInt(r[12]) || 1;
+    const precio_por_caja        = parseFloat(r[13]) || 0;
+    const stock_cajas            = parseInt(r[14]) || 0;
+    const stock_unidades         = parseInt(r[15]) || 0;
+    const observaciones          = String(r[16] ?? '').trim() || null;
+
+    // Validaciones requeridas
+    if (!nombre_producto) {
+      resultado.errores.push({ fila, motivo: 'nombre_producto está vacío' });
+      continue;
+    }
+    if (!sucursal_nombre) {
+      resultado.errores.push({ fila, motivo: 'sucursal está vacía' });
+      continue;
+    }
+    if (!fecha_ingreso) {
+      resultado.errores.push({ fila, motivo: 'fecha_ingreso inválida o vacía (usar DD/MM/AAAA)' });
+      continue;
+    }
+
+    try {
+      // Buscar sucursal (no se crea)
+      const [sucRows] = await db.promise().query(
+        'SELECT id_sucursal FROM sucursal WHERE nombre = ? AND id_empresa = ? AND activo = 1 LIMIT 1',
+        [sucursal_nombre, id_empresa]
+      );
+      if (sucRows.length === 0) {
+        resultado.errores.push({ fila, motivo: `Sucursal "${sucursal_nombre}" no encontrada` });
+        continue;
+      }
+      const id_sucursal = sucRows[0].id_sucursal;
+
+      // Clasificación (find or create)
+      let id_clasificacion = null;
+      if (clasificacion_nombre) {
+        const cl = await findOrCreate(db, 'clasificacion_producto', 'id_clasificacion', id_empresa, clasificacion_nombre);
+        id_clasificacion = cl.id;
+      }
+
+      // Marca (find or create)
+      let id_marca = null;
+      if (marca_nombre) {
+        const mk = await findOrCreate(db, 'marca', 'id_marca', id_empresa, marca_nombre);
+        id_marca = mk.id;
+      }
+
+      // Unidad de medida (find or create)
+      let id_unidad = null;
+      if (unidad_nombre) {
+        const [uRows] = await db.promise().query(
+          'SELECT id_unidad FROM unidad_medida WHERE nombre = ? AND id_empresa = ? LIMIT 1',
+          [unidad_nombre, id_empresa]
+        );
+        if (uRows.length > 0) {
+          id_unidad = uRows[0].id_unidad;
+        } else {
+          const [uRes] = await db.promise().query(
+            'INSERT INTO unidad_medida (id_empresa, nombre, abreviatura) VALUES (?, ?, ?)',
+            [id_empresa, unidad_nombre, unidad_nombre.substring(0, 5)]
+          );
+          id_unidad = uRes.insertId;
+        }
+      }
+
+      // Producto (find or create)
+      const [prodRows] = await db.promise().query(
+        'SELECT id_producto FROM producto WHERE nombre = ? AND id_empresa = ? LIMIT 1',
+        [nombre_producto, id_empresa]
+      );
+
+      let id_producto;
+      let producto_creado = false;
+
+      if (prodRows.length > 0) {
+        id_producto = prodRows[0].id_producto;
+      } else {
+        const [prodRes] = await db.promise().query(
+          `INSERT INTO producto
+           (id_empresa, id_clasificacion, id_marca, id_unidad, nombre, precio_mayor, precio_menor,
+            descuento_mayor, descuento_menor, stock_minimo, activo)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 1)`,
+          [id_empresa, id_clasificacion, id_marca, id_unidad, nombre_producto, precio_mayor, precio_menor]
+        );
+        id_producto = prodRes.insertId;
+        producto_creado = true;
+        resultado.productos_creados++;
+      }
+
+      // Crear lote
+      await db.promise().query(
+        `INSERT INTO lote
+         (id_producto, id_sucursal, numero_lote, fecha_produccion, fecha_vencimiento,
+          fecha_ingreso_almacen, cantidad_cajas, unidades_por_caja, precio_por_caja,
+          stock_cajas, stock_unidades, observaciones, activo)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        [id_producto, id_sucursal, numero_lote, fecha_produccion, fecha_vencimiento,
+         fecha_ingreso, cantidad_cajas, unidades_por_caja, precio_por_caja,
+         stock_cajas, stock_unidades, observaciones]
+      );
+
+      resultado.procesados++;
+      resultado.lotes_creados++;
+
+    } catch (err) {
+      console.error(`[importarInventario] fila ${fila}:`, err.message);
+      resultado.errores.push({ fila, motivo: err.message });
+    }
+  }
+
+  return res.json(resultado);
 };
 
 module.exports = {
@@ -429,4 +639,5 @@ module.exports = {
   listarAlertas,
   listarProductosActivos,
   listarSucursalesActivas,
+  importarInventario,
 };

@@ -1,11 +1,12 @@
 const db = require('../config/db');
 
 const listar = async (req, res) => {
+  const id_empresa = req.user.id_empresa;
   const puedeVerTodas = req.user.permisos.includes('movimientos.ver_todas');
   const { desde, hasta, tipo } = req.query;
 
-  const where = [];
-  const params = [];
+  const where = ['(m.id_sucursal IS NULL OR s.id_empresa = ?)'];
+  const params = [id_empresa];
 
   if (!puedeVerTodas) {
     where.push('m.id_sucursal = ?');
@@ -20,8 +21,6 @@ const listar = async (req, res) => {
     params.push(tipo);
   }
 
-  const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
-
   try {
     const [rows] = await db.promise().query(
       `SELECT m.*, cm.nombre AS categoria_nombre,
@@ -29,7 +28,7 @@ const listar = async (req, res) => {
        FROM movimiento m
        LEFT JOIN categoria_movimiento cm ON cm.id_categoria = m.id_categoria
        LEFT JOIN sucursal s ON s.id_sucursal = m.id_sucursal
-       ${whereClause}
+       WHERE ${where.join(' AND ')}
        ORDER BY m.fecha DESC, m.created_at DESC`,
       params
     );
@@ -61,16 +60,27 @@ const crear = async (req, res) => {
     return res.status(400).json({ error: 'La categoría es obligatoria' });
   }
 
+  const id_empresa = req.user.id_empresa;
+
   try {
     const [cats] = await db.promise().query(
-      'SELECT id_categoria FROM categoria_movimiento WHERE id_categoria = ? AND activo = 1',
-      [id_categoria]
+      'SELECT id_categoria FROM categoria_movimiento WHERE id_categoria = ? AND id_empresa = ? AND activo = 1',
+      [id_categoria, id_empresa]
     );
     if (cats.length === 0) {
       return res.status(400).json({ error: 'Categoría no válida' });
     }
 
     const sucursalFinal = puedeVerTodas ? (id_sucursal || null) : req.user.id_sucursal;
+    if (sucursalFinal) {
+      const [sucRows] = await db.promise().query(
+        'SELECT id_sucursal FROM sucursal WHERE id_sucursal = ? AND id_empresa = ?',
+        [sucursalFinal, id_empresa]
+      );
+      if (sucRows.length === 0) {
+        return res.status(400).json({ error: 'Sucursal no válida' });
+      }
+    }
 
     const [result] = await db.promise().query(
       `INSERT INTO movimiento (tipo, id_categoria, descripcion, monto, fecha, id_sucursal, id_usuario, observaciones)
@@ -113,9 +123,14 @@ const actualizar = async (req, res) => {
     return res.status(400).json({ error: 'La fecha es obligatoria' });
   }
 
+  const id_empresa = req.user.id_empresa;
+
   try {
     const [existing] = await db.promise().query(
-      'SELECT id_movimiento, id_sucursal FROM movimiento WHERE id_movimiento = ?', [id]
+      `SELECT m.id_movimiento, m.id_sucursal FROM movimiento m
+       LEFT JOIN sucursal s ON s.id_sucursal = m.id_sucursal
+       WHERE m.id_movimiento = ? AND (m.id_sucursal IS NULL OR s.id_empresa = ?)`,
+      [id, id_empresa]
     );
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Movimiento no encontrado' });
@@ -153,9 +168,14 @@ const eliminar = async (req, res) => {
   const { id } = req.params;
   const puedeVerTodas = req.user.permisos.includes('movimientos.ver_todas');
 
+  const id_empresa = req.user.id_empresa;
+
   try {
     const [existing] = await db.promise().query(
-      'SELECT id_movimiento, id_sucursal FROM movimiento WHERE id_movimiento = ?', [id]
+      `SELECT m.id_movimiento, m.id_sucursal FROM movimiento m
+       LEFT JOIN sucursal s ON s.id_sucursal = m.id_sucursal
+       WHERE m.id_movimiento = ? AND (m.id_sucursal IS NULL OR s.id_empresa = ?)`,
+      [id, id_empresa]
     );
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Movimiento no encontrado' });
@@ -174,15 +194,16 @@ const eliminar = async (req, res) => {
 
 const libroCaja = async (req, res) => {
   const { desde, hasta, id_sucursal, tipo } = req.query;
+  const id_empresa = req.user.id_empresa;
   const puedeVerTodas = req.user.permisos.includes('movimientos.ver_todas');
   const sucursalId = !puedeVerTodas ? req.user.id_sucursal : (id_sucursal || null);
 
-  const ventasConds  = ['v.estado = ?'];
-  const ventasParams = ['COMPLETADA'];
-  const comprasConds  = ['c.estado != ?'];
-  const comprasParams = ['CANCELADO'];
-  const movConds  = [];
-  const movParams = [];
+  const ventasConds  = ['v.estado = ?', 'sv.id_empresa = ?'];
+  const ventasParams = ['COMPLETADA', id_empresa];
+  const comprasConds  = ['c.estado != ?', 'sc.id_empresa = ?'];
+  const comprasParams = ['CANCELADO', id_empresa];
+  const movConds  = ['(m.id_sucursal IS NULL OR sm.id_empresa = ?)'];
+  const movParams = [id_empresa];
 
   if (desde && hasta) {
     ventasConds.push('DATE(v.fecha_venta) BETWEEN ? AND ?');
@@ -204,7 +225,7 @@ const libroCaja = async (req, res) => {
 
   const vWhere = `WHERE ${ventasConds.join(' AND ')}`;
   const cWhere = `WHERE ${comprasConds.join(' AND ')}`;
-  const mWhere = movConds.length ? `WHERE ${movConds.join(' AND ')}` : '';
+  const mWhere = `WHERE ${movConds.join(' AND ')}`;
 
   const tipoValido = tipo && ['INGRESO', 'EGRESO'].includes(tipo);
   const tipoFilter = tipoValido ? 'WHERE tipo = ?' : '';
@@ -218,14 +239,14 @@ const libroCaja = async (req, res) => {
         CONVERT('INGRESO' USING utf8mb4)  AS tipo,
         CONVERT('Venta'   USING utf8mb4)  AS categoria,
         CONVERT(CONCAT('Venta #', v.id_venta,
-          IF(c.nombre IS NOT NULL, CONCAT(' - ', c.nombre), '')) USING utf8mb4) AS descripcion,
+          IF(cl.nombre IS NOT NULL, CONCAT(' - ', cl.nombre), '')) USING utf8mb4) AS descripcion,
         v.total              AS monto,
         CONVERT('venta'   USING utf8mb4)  AS origen,
         v.id_venta           AS id_origen,
-        CONVERT(COALESCE(s.nombre, 'General') USING utf8mb4) AS sucursal
+        CONVERT(COALESCE(sv.nombre, 'General') USING utf8mb4) AS sucursal
       FROM venta v
-      LEFT JOIN cliente  c ON c.id_cliente  = v.id_cliente
-      LEFT JOIN sucursal s ON s.id_sucursal = v.id_sucursal
+      LEFT JOIN cliente  cl ON cl.id_cliente  = v.id_cliente
+      LEFT JOIN sucursal sv ON sv.id_sucursal = v.id_sucursal
       ${vWhere}
 
       UNION ALL
@@ -238,10 +259,10 @@ const libroCaja = async (req, res) => {
         c.total              AS monto,
         CONVERT('compra'  USING utf8mb4)  AS origen,
         c.id_compra          AS id_origen,
-        CONVERT(COALESCE(s.nombre, 'General') USING utf8mb4) AS sucursal
+        CONVERT(COALESCE(sc.nombre, 'General') USING utf8mb4) AS sucursal
       FROM compra c
-      LEFT JOIN proveedor p ON p.id_proveedor = c.id_proveedor
-      LEFT JOIN sucursal  s ON s.id_sucursal  = c.id_sucursal
+      LEFT JOIN proveedor p  ON p.id_proveedor = c.id_proveedor
+      LEFT JOIN sucursal  sc ON sc.id_sucursal  = c.id_sucursal
       ${cWhere}
 
       UNION ALL
@@ -254,10 +275,10 @@ const libroCaja = async (req, res) => {
         m.monto              AS monto,
         CONVERT('movimiento' USING utf8mb4) AS origen,
         m.id_movimiento      AS id_origen,
-        CONVERT(COALESCE(s.nombre, 'General') USING utf8mb4) AS sucursal
+        CONVERT(COALESCE(sm.nombre, 'General') USING utf8mb4) AS sucursal
       FROM movimiento m
       LEFT JOIN categoria_movimiento cm ON cm.id_categoria = m.id_categoria
-      LEFT JOIN sucursal             s  ON s.id_sucursal   = m.id_sucursal
+      LEFT JOIN sucursal             sm ON sm.id_sucursal   = m.id_sucursal
       ${mWhere}
     ) AS todos
     ${tipoFilter}

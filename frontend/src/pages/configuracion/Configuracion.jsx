@@ -30,6 +30,7 @@ const FORM_VACIO = {
 
 export default function Configuracion() {
   const { puede } = usePermission();
+  const puedeVer    = puede('ver',    'configuracion');
   const puedeEditar = puede('editar', 'configuracion');
   const { recargarConfig } = useConfig();
   const fileInputRef = useRef(null);
@@ -68,7 +69,7 @@ export default function Configuracion() {
     }
   }, []);
 
-  useEffect(() => { cargarConfig(); }, [cargarConfig]);
+  useEffect(() => { if (puedeVer) cargarConfig(); }, [cargarConfig, puedeVer]);
 
   const hayCambios = configOriginal !== null && (
     form.nombre_empresa !== (configOriginal.nombre_empresa || '') ||
@@ -121,6 +122,22 @@ export default function Configuracion() {
      ${readonly
        ? 'bg-zinc-50 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 cursor-not-allowed'
        : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent'}`;
+
+  if (!puedeVer) {
+    return (
+      <PageWrapper>
+        <div className="flex flex-col items-center justify-center h-[70vh] text-center px-4">
+          <div className="w-20 h-20 bg-red-50 dark:bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mb-4">
+            <svg className="w-10 h-10" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-black text-zinc-900 dark:text-white mb-2">Acceso Denegado</h1>
+          <p className="text-zinc-500 max-w-md">No tienes permiso para ver la configuración del sistema. Contacta al administrador.</p>
+        </div>
+      </PageWrapper>
+    );
+  }
 
   return (
     <PageWrapper>

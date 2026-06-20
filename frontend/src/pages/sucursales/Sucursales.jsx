@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import PageWrapper from '../../components/PageWrapper';
 import TablaSucursales from './components/TablaSucursales';
 import { ModalCrearEditar, ModalEliminar } from './components/SucursalModals';
+import PlanLimiteModal from '../../components/PlanLimiteModal';
 import sucursalService from '../../services/sucursal.service';
 import { usePermission } from '../../hooks/usePermission';
 
@@ -25,6 +26,7 @@ export default function Sucursales() {
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [toast, setToast] = useState(null);
+  const [mensajeLimite, setMensajeLimite] = useState(null);
 
   // Modales
   const [modalType, setModalType] = useState(null); // 'crear', 'editar', 'eliminar', null
@@ -79,7 +81,12 @@ export default function Sucursales() {
       setModalType(null);
       await cargarDatos();
     } catch (err) {
-      mostrarToast('error', err.response?.data?.error || 'Error al guardar sucursal');
+      if (err.response?.status === 403) {
+        setModalType(null);
+        setMensajeLimite(err.response.data?.error);
+      } else {
+        mostrarToast('error', err.response?.data?.error || 'Error al guardar sucursal');
+      }
     } finally {
       setGuardando(false);
     }
@@ -117,6 +124,7 @@ export default function Sucursales() {
   return (
     <PageWrapper>
       <Toast toast={toast} />
+      <PlanLimiteModal mensaje={mensajeLimite} onClose={() => setMensajeLimite(null)} />
 
       <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>

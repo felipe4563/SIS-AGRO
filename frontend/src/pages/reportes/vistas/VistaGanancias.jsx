@@ -258,7 +258,6 @@ export default function VistaGanancias() {
                   <BotonesExportar
                     datos={topProductos}
                     columnas={[
-                      { key: 'codigo_barras',    header: 'Código',       excelValue: r => r.codigo_barras },
                       { key: 'nombre',           header: 'Producto',     excelValue: r => r.nombre },
                       { key: 'unidades_vendidas',header: 'Unidades',     excelValue: r => r.unidades_vendidas },
                       { key: 'ingresos_generados',header: 'Ingresos (Bs)', excelValue: r => parseFloat(r.ingresos_generados) }
@@ -272,7 +271,7 @@ export default function VistaGanancias() {
                   <div className="h-64 flex items-center justify-center text-zinc-400">No hay datos de ventas suficientes</div>
                 ) : (
                   <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                       <BarChart data={topProductos} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#3f3f46" opacity={0.2} />
                         <XAxis type="number" tick={{ fill: '#71717a', fontSize: 12 }} />
@@ -333,7 +332,6 @@ export default function VistaGanancias() {
                 <BotonesExportar
                   datos={datosGanancia}
                   columnas={[
-                    { key: 'codigo_barras',  header: 'Código',       excelValue: r => r.codigo_barras || 'N/A' },
                     { key: 'nombre',         header: 'Producto',     excelValue: r => r.nombre },
                     { key: 'unidades_vendidas', header: 'Unidades',  excelValue: r => r.unidades_vendidas },
                     { key: 'total_ingresos', header: 'Ingresos (Bs)', excelValue: r => parseFloat(r.total_ingresos) },
@@ -350,7 +348,6 @@ export default function VistaGanancias() {
                   cargando={cargando}
                   datos={datosGanancia}
                   columnas={[
-                    { key: 'codigo_barras', header: 'Código', render: v => v || 'N/A' },
                     { key: 'nombre', header: 'Producto' },
                     { key: 'unidades_vendidas', header: 'Unidades', align: 'center' },
                     { key: 'total_ingresos', header: 'Ingresos (Bs)', align: 'right', render: v => parseFloat(v).toFixed(2) },

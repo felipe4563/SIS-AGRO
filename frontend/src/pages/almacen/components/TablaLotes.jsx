@@ -3,6 +3,7 @@ import { usePermission } from '../../../hooks/usePermission';
 export default function TablaLotes({
   lotes,
   cargando,
+  puedeVerMovimientos,
   onVerMovimientos,
   onAjustar,
   onNuevoTraslado,
@@ -108,15 +109,17 @@ export default function TablaLotes({
 
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => onVerMovimientos(l)}
-                        className="p-1.5 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 rounded transition-colors"
-                        title="Ver kardex / historial"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </button>
+                      {puedeVerMovimientos && (
+                        <button
+                          onClick={() => onVerMovimientos(l)}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 rounded transition-colors"
+                          title="Ver kardex / historial"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </button>
+                      )}
 
                       {puede('ajustar', 'almacen') && (
                         <button

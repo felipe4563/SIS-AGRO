@@ -6,7 +6,6 @@ const ctrl = require('../controllers/catalogos.Controller');
 router.use(authMiddleware);
 
 // --- CLASIFICACIONES ---
-// Listar es público para usuarios logueados (necesario para selects de productos)
 router.get('/clasificaciones', ctrl.listarClasificaciones);
 // Mutaciones protegidas
 router.post('/clasificaciones', checkPermission('crear', 'clasificaciones'), ctrl.crearClasificacion);
@@ -26,5 +25,12 @@ router.get('/unidades', ctrl.listarUnidades);
 router.post('/unidades', checkPermission('crear', 'unidades'), ctrl.crearUnidad);
 router.put('/unidades/:id', checkPermission('editar', 'unidades'), ctrl.editarUnidad);
 router.delete('/unidades/:id', checkPermission('eliminar', 'unidades'), ctrl.eliminarUnidad);
+
+// --- CONVERSIONES DE UNIDAD ---
+router.get('/conversiones', ctrl.listarConversiones);
+router.post('/conversiones', checkPermission('crear', 'conversiones'), ctrl.crearConversion);
+router.put('/conversiones/:id', checkPermission('editar', 'conversiones'), ctrl.editarConversion);
+router.patch('/conversiones/:id/activo', checkPermission('editar', 'conversiones'), ctrl.toggleActivoConversion);
+router.delete('/conversiones/:id', checkPermission('eliminar', 'conversiones'), ctrl.eliminarConversion);
 
 module.exports = router;

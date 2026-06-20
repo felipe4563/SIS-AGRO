@@ -7,7 +7,20 @@ async function _insertarVentaFIFO(connection, {
   subtotal, descuento_total, total, monto_pagado, cambio,
   metodo_pago, observaciones, detalles,
   estado, codepay_order_id,
+  fecha_vencimiento_credito,
 }) {
+  // 0. Pre-fetch factores de conversión para ítems fraccionados
+  const conversionIds = [...new Set(detalles.filter(d => d.id_conversion).map(d => d.id_conversion))];
+  const factoresMap = {};
+  if (conversionIds.length > 0) {
+    const phs = conversionIds.map(() => '?').join(',');
+    const [convRows] = await connection.query(
+      `SELECT id_conversion, factor FROM conversion_unidad WHERE id_conversion IN (${phs})`,
+      conversionIds
+    );
+    for (const c of convRows) factoresMap[c.id_conversion] = parseFloat(c.factor);
+  }
+
   // 1. Validar y acumular requerimientos por producto
   const requerimientos = {};
   for (const item of detalles) {
@@ -20,23 +33,30 @@ async function _insertarVentaFIFO(connection, {
         throw new Error(`Falta el parámetro unidades_por_caja para el producto ID ${item.id_producto} que se vende por CAJA.`);
       }
       unidades_a_descontar = parseFloat(item.cantidad) * parseFloat(item.unidades_por_caja);
+    } else if (item.id_conversion && factoresMap[item.id_conversion]) {
+      // Venta fraccionada: descontar cantidad / factor del stock en unidades base
+      unidades_a_descontar = parseFloat(item.cantidad) / factoresMap[item.id_conversion];
     }
     requerimientos[item.id_producto].cantidadRequerida += unidades_a_descontar;
     requerimientos[item.id_producto].itemsOriginales.push({ ...item, unidades_totales: unidades_a_descontar });
   }
 
   // 2. Insertar cabecera de venta
+  const esCredito = (metodo_pago || 'EFECTIVO') === 'CREDITO';
   const [ventaResult] = await connection.query(
     `INSERT INTO venta
       (id_sucursal, id_usuario, id_cliente, nro_factura, tipo_venta, subtotal, descuento_total,
-       total, monto_pagado, cambio, metodo_pago, estado, observaciones, codepay_order_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       total, monto_pagado, cambio, metodo_pago, estado, observaciones, codepay_order_id,
+       fecha_vencimiento_credito, estado_credito)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id_sucursal, id_usuario, id_cliente || null, nro_factura || null,
       tipo_venta || 'MENOR', subtotal, descuento_total, total,
       monto_pagado, cambio, metodo_pago || 'EFECTIVO',
       estado, observaciones || null,
       codepay_order_id || null,
+      esCredito ? (fecha_vencimiento_credito || null) : null,
+      esCredito ? 'PENDIENTE' : null,
     ]
   );
   const id_venta = ventaResult.insertId;
@@ -76,10 +96,11 @@ async function _insertarVentaFIFO(connection, {
 
         await connection.query(
           `INSERT INTO detalle_venta
-            (id_venta, id_lote, id_producto, tipo_cantidad, cantidad, precio_unitario, descuento_pct, descuento_monto, subtotal)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (id_venta, id_lote, id_producto, tipo_cantidad, id_conversion, cantidad, precio_unitario, descuento_pct, descuento_monto, subtotal)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             id_venta, loteActual.id_lote, id_producto, itemOriginal.tipo_cantidad,
+            itemOriginal.id_conversion || null,
             cantParaDetalle, itemOriginal.precio_unitario, itemOriginal.descuento_pct || 0,
             descMontoDetalle, subtotalDetalle,
           ]
@@ -112,14 +133,18 @@ async function _insertarVentaFIFO(connection, {
 
 // Listar todas las ventas
 const listar = async (req, res) => {
+  const id_empresa = req.user.id_empresa;
   try {
     const [rows] = await db.promise().query(
-      `SELECT v.*, c.nombre as cliente_nombre, c.apellido as cliente_apellido, c.ci_nit, 
+      `SELECT v.*, c.nombre as cliente_nombre, c.apellido as cliente_apellido, c.ci_nit,
               u.nombre as usuario_nombre, u.apellido as usuario_apellido
        FROM venta v
+       JOIN sucursal s ON v.id_sucursal = s.id_sucursal
        LEFT JOIN cliente c ON v.id_cliente = c.id_cliente
        LEFT JOIN usuario u ON v.id_usuario = u.id_usuario
-       ORDER BY v.fecha_venta DESC, v.id_venta DESC`
+       WHERE s.id_empresa = ?
+       ORDER BY v.fecha_venta DESC, v.id_venta DESC`,
+      [id_empresa]
     );
     return res.json(rows);
   } catch (err) {
@@ -141,9 +166,9 @@ const obtener = async (req, res) => {
        FROM venta v
        LEFT JOIN cliente c ON v.id_cliente = c.id_cliente
        LEFT JOIN usuario u ON v.id_usuario = u.id_usuario
-       LEFT JOIN sucursal s ON v.id_sucursal = s.id_sucursal
-       WHERE v.id_venta = ?`,
-      [id]
+       JOIN sucursal s ON v.id_sucursal = s.id_sucursal
+       WHERE v.id_venta = ? AND s.id_empresa = ?`,
+      [id, req.user.id_empresa]
     );
 
     if (ventaRows.length === 0) return res.status(404).json({ error: 'Venta no encontrada' });
@@ -151,7 +176,7 @@ const obtener = async (req, res) => {
     const venta = ventaRows[0];
 
     const [detalleRows] = await db.promise().query(
-      `SELECT d.*, p.nombre as producto_nombre, p.codigo_barras, l.numero_lote
+      `SELECT d.*, p.nombre as producto_nombre, l.numero_lote
        FROM detalle_venta d
        JOIN producto p ON d.id_producto = p.id_producto
        JOIN lote l ON d.id_lote = l.id_lote
@@ -173,10 +198,24 @@ const crear = async (req, res) => {
     id_cliente, nro_factura, tipo_venta, subtotal,
     descuento_total, total, monto_pagado, cambio,
     metodo_pago, observaciones, detalles,
+    fecha_vencimiento_credito,
   } = req.body;
 
   if (!detalles || detalles.length === 0) {
     return res.status(400).json({ error: 'El carrito de ventas está vacío.' });
+  }
+
+  if (metodo_pago === 'CREDITO' && !id_cliente) {
+    return res.status(400).json({ error: 'Para ventas a crédito debe seleccionar un cliente.' });
+  }
+
+  // Verificar que haya un turno de caja abierto en la sucursal
+  const [turnoAbierto] = await db.promise().query(
+    `SELECT id_apertura FROM apertura_cierre_caja WHERE id_sucursal = ? AND estado = 'ABIERTA' LIMIT 1`,
+    [req.user.id_sucursal]
+  );
+  if (turnoAbierto.length === 0) {
+    return res.status(409).json({ error: 'No hay caja abierta. Abre un turno en el módulo de Caja antes de registrar ventas.' });
   }
 
   const connection = await db.promise().getConnection();
@@ -188,6 +227,7 @@ const crear = async (req, res) => {
       id_cliente, nro_factura, tipo_venta, subtotal,
       descuento_total, total, monto_pagado, cambio,
       metodo_pago, observaciones, detalles,
+      fecha_vencimiento_credito,
       estado:             'COMPLETADA',
       codepay_order_id:   null,
     });
@@ -221,6 +261,15 @@ const iniciarPagoQR = async (req, res) => {
 
   const id_usuario  = req.user.id_usuario;
   const id_sucursal = req.user.id_sucursal;
+
+  // Verificar que haya un turno de caja abierto en la sucursal
+  const [turnoAbiertoQR] = await db.promise().query(
+    `SELECT id_apertura FROM apertura_cierre_caja WHERE id_sucursal = ? AND estado = 'ABIERTA' LIMIT 1`,
+    [id_sucursal]
+  );
+  if (turnoAbiertoQR.length === 0) {
+    return res.status(409).json({ error: 'No hay caja abierta. Abre un turno en el módulo de Caja antes de registrar ventas.' });
+  }
   const order_id    = generarOrderId();
 
   const connection = await db.promise().getConnection();
@@ -245,7 +294,7 @@ const iniciarPagoQR = async (req, res) => {
     const idProductos = [...new Set(detalles.map(d => d.id_producto))];
     const placeholders = idProductos.map(() => '?').join(',');
     const [productos] = await db.promise().query(
-      `SELECT id_producto, nombre, codigo_barras FROM producto WHERE id_producto IN (${placeholders})`,
+      `SELECT id_producto, nombre FROM producto WHERE id_producto IN (${placeholders})`,
       idProductos
     );
     const nombresProd = Object.fromEntries(productos.map(p => [p.id_producto, p]));
@@ -261,7 +310,6 @@ const iniciarPagoQR = async (req, res) => {
         quantity:   cantidad,
         unit_price: unitPrice,
       };
-      if (prod.codigo_barras) item.sku = prod.codigo_barras;
       return item;
     });
 
@@ -313,6 +361,18 @@ const anular = async (req, res) => {
     // 2. Recuperar detalles para revertir stock
     const [detalles] = await connection.query('SELECT * FROM detalle_venta WHERE id_venta = ?', [id]);
 
+    // Pre-fetch factores de conversión para detalles fraccionados
+    const convIdsAnular = [...new Set(detalles.filter(d => d.id_conversion).map(d => d.id_conversion))];
+    const factoresAnularMap = {};
+    if (convIdsAnular.length > 0) {
+      const phs = convIdsAnular.map(() => '?').join(',');
+      const [cRows] = await connection.query(
+        `SELECT id_conversion, factor FROM conversion_unidad WHERE id_conversion IN (${phs})`,
+        convIdsAnular
+      );
+      for (const c of cRows) factoresAnularMap[c.id_conversion] = parseFloat(c.factor);
+    }
+
     for (const det of detalles) {
       // Necesitamos las unidades por caja del lote para el recalculo de cajas
       const [loteInfo] = await connection.query('SELECT stock_unidades, unidades_por_caja FROM lote WHERE id_lote = ? FOR UPDATE', [det.id_lote]);
@@ -321,6 +381,8 @@ const anular = async (req, res) => {
       let unidades_a_devolver = parseFloat(det.cantidad);
       if (det.tipo_cantidad === 'CAJA') {
         unidades_a_devolver = parseFloat(det.cantidad) * loteInfo[0].unidades_por_caja;
+      } else if (det.id_conversion && factoresAnularMap[det.id_conversion]) {
+        unidades_a_devolver = parseFloat(det.cantidad) / factoresAnularMap[det.id_conversion];
       }
 
       const nuevoStockUnidades = loteInfo[0].stock_unidades + unidades_a_devolver;
@@ -368,11 +430,11 @@ const listarProductosPOS = async (req, res) => {
       `SELECT
          p.id_producto,
          p.nombre,
-         p.codigo_barras,
          p.precio_menor,
          p.precio_mayor,
          p.descuento_menor,
          p.descuento_mayor,
+         p.permite_fraccion,
          MIN(l.unidades_por_caja) AS unidades_por_caja,
          SUM(l.stock_unidades)   AS stock_unidades_total
        FROM lote l
@@ -382,13 +444,50 @@ const listarProductosPOS = async (req, res) => {
          AND l.stock_unidades > 0
          AND p.activo = 1
        GROUP BY
-         p.id_producto, p.nombre, p.codigo_barras,
+         p.id_producto, p.nombre,
          p.precio_menor, p.precio_mayor,
-         p.descuento_menor, p.descuento_mayor
+         p.descuento_menor, p.descuento_mayor,
+         p.permite_fraccion
        ORDER BY p.nombre ASC`,
       [id_sucursal]
     );
-    return res.json(rows);
+
+    // Para productos fraccionables, obtener sus conversiones con precios
+    const idsFracc = rows.filter(p => p.permite_fraccion).map(p => p.id_producto);
+    const fraccionesMap = {};
+    if (idsFracc.length > 0) {
+      const phs = idsFracc.map(() => '?').join(',');
+      const [fracc] = await db.promise().query(
+        `SELECT pf.id_producto, pf.id_conversion,
+                pf.precio_mayor, pf.precio_menor,
+                cu.nombre, cu.abreviatura, cu.factor
+         FROM producto_fraccion pf
+         JOIN conversion_unidad cu ON pf.id_conversion = cu.id_conversion
+         WHERE pf.id_producto IN (${phs})
+           AND pf.activo = 1
+           AND cu.activo = 1
+         ORDER BY cu.nombre ASC`,
+        idsFracc
+      );
+      for (const f of fracc) {
+        if (!fraccionesMap[f.id_producto]) fraccionesMap[f.id_producto] = [];
+        fraccionesMap[f.id_producto].push({
+          id_conversion: f.id_conversion,
+          nombre:        f.nombre,
+          abreviatura:   f.abreviatura,
+          factor:        parseFloat(f.factor),
+          precio_mayor:  parseFloat(f.precio_mayor),
+          precio_menor:  parseFloat(f.precio_menor),
+        });
+      }
+    }
+
+    const result = rows.map(p => ({
+      ...p,
+      fracciones: fraccionesMap[p.id_producto] || [],
+    }));
+
+    return res.json(result);
   } catch (err) {
     console.error('[listarProductosPOS]', err);
     return res.status(500).json({ error: 'Error al obtener productos para el POS' });

@@ -20,6 +20,9 @@ export default function NuevaCompra() {
   const [fechaCompra, setFechaCompra] = useState(new Date().toISOString().split('T')[0]);
   const [observaciones, setObservaciones] = useState('');
   const [descuento, setDescuento] = useState(0);
+  const [metodoPago, setMetodoPago] = useState('EFECTIVO');
+  const [cuotaInicial, setCuotaInicial] = useState('');
+  const [fechaVencimientoCredito, setFechaVencimientoCredito] = useState('');
 
   // Detalle
   const [detalles, setDetalles] = useState([]);
@@ -101,7 +104,10 @@ export default function NuevaCompra() {
   const guardarCompra = async () => {
     if (!idProveedor) return alert('Debe seleccionar un proveedor');
     if (detalles.length === 0) return alert('Debe agregar al menos un producto a la compra');
-    
+    if (metodoPago === 'CREDITO' && !fechaVencimientoCredito) {
+      return alert('Para compras a crédito debe indicar la fecha de vencimiento');
+    }
+
     setGuardando(true);
     try {
       const payload = {
@@ -112,7 +118,10 @@ export default function NuevaCompra() {
         subtotal: calcSubtotalGeneral(),
         descuento: parseFloat(descuento || 0),
         total: calcTotalGeneral(),
-        detalles
+        detalles,
+        metodo_pago: metodoPago,
+        monto_pagado: metodoPago === 'CREDITO' ? parseFloat(cuotaInicial || 0) : calcTotalGeneral(),
+        fecha_vencimiento_credito: metodoPago === 'CREDITO' ? fechaVencimientoCredito : null,
       };
 
       await compraService.crear(payload);
@@ -189,6 +198,47 @@ export default function NuevaCompra() {
                 placeholder="Ej. F-10293"
               />
             </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Método de Pago</label>
+              <select
+                value={metodoPago}
+                onChange={(e) => setMetodoPago(e.target.value)}
+                className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-emerald-500/50 outline-none"
+              >
+                <option value="EFECTIVO">Efectivo</option>
+                <option value="TRANSFERENCIA">Transferencia</option>
+                <option value="CREDITO">Crédito (a pagar)</option>
+                <option value="OTRO">Otro</option>
+              </select>
+            </div>
+
+            {metodoPago === 'CREDITO' && (
+              <>
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Cuota Inicial (Bs)</label>
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={cuotaInicial}
+                    onChange={(e) => setCuotaInicial(e.target.value)}
+                    placeholder="0 = sin inicial"
+                    className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-amber-500/50 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Fecha de Vencimiento *</label>
+                  <input
+                    type="date"
+                    value={fechaVencimientoCredito}
+                    onChange={(e) => setFechaVencimientoCredito(e.target.value)}
+                    className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-amber-300 dark:border-amber-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-amber-500/50 outline-none"
+                  />
+                </div>
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg text-xs text-amber-700 dark:text-amber-300">
+                  Compra a crédito. Gestiona los abonos en Créditos → Cuentas por Pagar.
+                </div>
+              </>
+            )}
 
             <div>
               <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Observaciones</label>

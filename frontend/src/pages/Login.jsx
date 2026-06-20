@@ -78,17 +78,11 @@ const Login = () => {
         {/* Logo con resplandor */}
         <div className="flex justify-center mb-8 relative">
           <div className="absolute inset-0 bg-emerald-400/30 dark:bg-emerald-400/20 blur-2xl rounded-full scale-150 animate-pulse" />
-          {configuracion.logo ? (
-            <img
-              src={configuracion.logo}
-              alt={configuracion.nombre_empresa}
-              className="w-32 sm:w-40 md:w-48 h-auto object-contain relative z-10 filter drop-shadow-[0_0_15px_rgba(52,211,153,0.3)] dark:drop-shadow-[0_0_15px_rgba(52,211,153,0.5)] transition-transform duration-500 hover:scale-105"
-            />
-          ) : (
-            <span className="relative z-10 text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-lime-500 dark:from-emerald-400 dark:to-lime-300">
-              {configuracion.nombre_empresa}
-            </span>
-          )}
+          <img
+            src="/logo.png"
+            alt={configuracion.nombre_empresa || 'SIS-AGRO'}
+            className="w-32 sm:w-40 md:w-48 h-auto object-contain relative z-10 filter drop-shadow-[0_0_15px_rgba(52,211,153,0.3)] dark:drop-shadow-[0_0_15px_rgba(52,211,153,0.5)] transition-transform duration-500 hover:scale-105"
+          />
         </div>
 
         <div className="text-center mb-8">

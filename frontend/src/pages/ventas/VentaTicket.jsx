@@ -250,13 +250,20 @@ export default function VentaTicket() {
           <div style={{ marginBottom: '4px' }}>
             <div style={row}>
               <span>Método:</span>
-              <span>{venta.metodo_pago}</span>
+              <span>{{
+                EFECTIVO: 'Efectivo',
+                TRANSFERENCIA: 'Transferencia',
+                QR: 'QR (CodePay)',
+                QR_ESTATICO: 'QR (Estático)',
+                CREDITO: 'Crédito',
+                OTRO: 'Otro',
+              }[venta.metodo_pago] ?? venta.metodo_pago}</span>
             </div>
             <div style={row}>
               <span>Pagado Bs:</span>
               <span>{fmt(venta.monto_pagado)}</span>
             </div>
-            {venta.metodo_pago !== 'QR' && (
+            {venta.metodo_pago !== 'QR' && venta.metodo_pago !== 'QR_ESTATICO' && (
               <div style={row}>
                 <span>Cambio Bs:</span>
                 <span>{fmt(venta.cambio)}</span>

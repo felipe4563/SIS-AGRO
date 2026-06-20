@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 
-export function ModalCrearEditar({ activeTab, item, onConfirm, onClose, guardando }) {
+export function ModalCrearEditar({ activeTab, item, onConfirm, onClose, guardando, unidades = [] }) {
   const isEditing = !!item;
   const isUnidad = activeTab === 'unidades';
   const isMarca = activeTab === 'marcas';
-  
+  const isConversion = activeTab === 'conversiones';
+
   const getTitles = () => {
     if (activeTab === 'clasificaciones') return isEditing ? 'Editar Clasificación' : 'Nueva Clasificación';
-    if (activeTab === 'marcas') return isEditing ? 'Editar Marca' : 'Nueva Marca';
+    if (activeTab === 'marcas')          return isEditing ? 'Editar Marca'         : 'Nueva Marca';
+    if (activeTab === 'conversiones')    return isEditing ? 'Editar Conversión'    : 'Nueva Conversión';
     return isEditing ? 'Editar Unidad' : 'Nueva Unidad';
   };
 
@@ -15,16 +17,20 @@ export function ModalCrearEditar({ activeTab, item, onConfirm, onClose, guardand
     nombre: '',
     descripcion: '',
     pais_origen: '',
-    abreviatura: ''
+    abreviatura: '',
+    id_unidad_base: '',
+    factor: ''
   });
 
   useEffect(() => {
     if (item) {
       setFormData({
-        nombre: item.nombre || '',
-        descripcion: item.descripcion || '',
-        pais_origen: item.pais_origen || '',
-        abreviatura: item.abreviatura || ''
+        nombre:        item.nombre        || '',
+        descripcion:   item.descripcion   || '',
+        pais_origen:   item.pais_origen   || '',
+        abreviatura:   item.abreviatura   || '',
+        id_unidad_base: item.id_unidad_base ? String(item.id_unidad_base) : '',
+        factor:        item.factor != null ? String(item.factor) : ''
       });
     }
   }, [item]);
@@ -87,7 +93,7 @@ export function ModalCrearEditar({ activeTab, item, onConfirm, onClose, guardand
               </div>
             )}
 
-            {isUnidad && (
+            {(isUnidad || isConversion) && (
               <div>
                 <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">
                   Abreviatura *
@@ -99,12 +105,56 @@ export function ModalCrearEditar({ activeTab, item, onConfirm, onClose, guardand
                   value={formData.abreviatura}
                   onChange={handleChange}
                   className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 outline-none transition-all"
-                  placeholder="Ej. KG, Lts, Pza..."
+                  placeholder={isConversion ? 'Ej. arr, cta, lb...' : 'Ej. KG, Lts, Pza...'}
                 />
               </div>
             )}
 
-            {!isUnidad && (
+            {isConversion && (
+              <>
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">
+                    Unidad base (de compra / almacén) *
+                  </label>
+                  <select
+                    name="id_unidad_base"
+                    required
+                    value={formData.id_unidad_base}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 outline-none transition-all"
+                  >
+                    <option value="">Selecciona una unidad...</option>
+                    {unidades.map(u => (
+                      <option key={u.id_unidad} value={u.id_unidad}>
+                        {u.nombre} ({u.abreviatura})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">
+                    Factor de conversión *
+                  </label>
+                  <input
+                    type="number"
+                    name="factor"
+                    required
+                    min="0.0001"
+                    step="0.0001"
+                    value={formData.factor}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 outline-none transition-all"
+                    placeholder="Ej. 4 (4 arrobas = 1 quintal)"
+                  />
+                  <p className="mt-1 text-xs text-zinc-400">
+                    Cuántas <strong>{formData.nombre || 'sub-unidades'}</strong> equivalen a 1 unidad base
+                  </p>
+                </div>
+              </>
+            )}
+
+            {!isUnidad && !isConversion && (
               <div>
                 <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">
                   Descripción
@@ -155,7 +205,7 @@ export function ModalCrearEditar({ activeTab, item, onConfirm, onClose, guardand
 export function ModalEliminar({ activeTab, item, onConfirm, onClose, guardando }) {
   if (!item) return null;
 
-  const isUnidad = activeTab === 'unidades';
+  const isUnidad = activeTab === 'unidades' || activeTab === 'conversiones';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">

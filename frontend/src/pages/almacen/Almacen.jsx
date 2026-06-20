@@ -22,13 +22,25 @@ function Toast({ toast }) {
   );
 }
 
-const TABS = ['inventario', 'traslados', 'alertas'];
+const ALL_TABS = ['inventario', 'traslados', 'alertas'];
 const TAB_LABELS = { inventario: 'Inventario', traslados: 'Traslados', alertas: 'Alertas' };
 
 export default function Almacen() {
   const { puede } = usePermission();
 
-  const [tab, setTab] = useState('inventario');
+  const puedeVerLotes        = puede('ver_lotes',        'almacen');
+  const puedeVerMovimientos  = puede('ver_movimientos',  'almacen');
+  const puedeVerVencimientos = puede('ver_vencimientos', 'almacen');
+  const puedeTraslados       = puede('trasladar',        'almacen');
+
+  const TABS = ALL_TABS.filter(t => {
+    if (t === 'inventario') return puedeVerLotes;
+    if (t === 'traslados')  return puedeTraslados;
+    if (t === 'alertas')    return puedeVerVencimientos;
+    return true;
+  });
+
+  const [tab, setTab] = useState(() => TABS[0] || 'inventario');
   const [lotes, setLotes] = useState([]);
   const [traslados, setTraslados] = useState([]);
   const [alertas, setAlertas] = useState(null);
@@ -83,11 +95,11 @@ export default function Almacen() {
     }
   }, []);
 
-  useEffect(() => { cargarLotes(); }, [cargarLotes]);
+  useEffect(() => { if (puedeVerLotes) cargarLotes(); }, [cargarLotes, puedeVerLotes]);
 
   useEffect(() => {
-    if (tab === 'traslados' && traslados.length === 0) cargarTraslados();
-    if (tab === 'alertas' && !alertas) cargarAlertas();
+    if (tab === 'traslados' && puedeTraslados && traslados.length === 0) cargarTraslados();
+    if (tab === 'alertas'   && puedeVerVencimientos && !alertas)          cargarAlertas();
   }, [tab]);
 
   // ── Handlers: Lotes ────────────────────────────────────────────────────────
@@ -230,6 +242,7 @@ export default function Almacen() {
         <TablaLotes
           lotes={lotes}
           cargando={cargandoLotes}
+          puedeVerMovimientos={puedeVerMovimientos}
           onVerMovimientos={(l) => setDetalleId(l.id_lote)}
           onAjustar={(l) => { setLoteActivo(l); setModalType('ajuste'); }}
           onNuevoTraslado={(l) => { setLoteActivo(l); setModalType('traslado'); }}

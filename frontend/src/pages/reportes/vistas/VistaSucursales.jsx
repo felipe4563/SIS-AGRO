@@ -130,7 +130,7 @@ export default function VistaSucursales() {
         <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-5">
           <h3 className="text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-4">Ingresos por Sucursal (Bs)</h3>
           <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <BarChart data={datos} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" opacity={0.2} />
                 <XAxis dataKey="sucursal" tick={{ fill: '#71717a', fontSize: 11 }} />

@@ -51,12 +51,18 @@ const login = (req, res) => {
     });
   }
 
-  // ── 1. Buscar usuario activo por correo o CI ──────────────────────────────
+  // ── 1. Buscar usuario activo por correo o CI (empresa también debe estar activa) ──
   const sqlUsuario = `
-    SELECT u.*, r.nombre AS rol_nombre
+    SELECT u.*, r.nombre AS rol_nombre, p.modulos AS plan_modulos,
+           IFNULL(e.setup_completado, 1) AS setup_completado
     FROM usuario u
     LEFT JOIN rol r ON u.id_rol = r.id_rol
-    WHERE (u.correo = ? OR u.ci = ?) AND u.activo = 1
+    JOIN empresa e ON e.id_empresa = u.id_empresa
+    LEFT JOIN suscripcion s ON s.id_empresa = e.id_empresa
+      AND s.estado IN ('ACTIVA', 'PRUEBA')
+    LEFT JOIN plan p ON p.id_plan = s.id_plan
+    WHERE (u.correo = ? OR u.ci = ?) AND u.activo = 1 AND e.activo = 1
+    LIMIT 1
   `;
 
   db.query(sqlUsuario, [identificador, identificador], async (err, results) => {
@@ -101,17 +107,27 @@ const login = (req, res) => {
 
         const permisos = rowsPermisos.map(p => p.nombre_clave);
 
+        const rawModulos = usuario.plan_modulos;
+        const modulos = Array.isArray(rawModulos)
+          ? rawModulos
+          : (typeof rawModulos === 'string' ? JSON.parse(rawModulos) : []);
+
         // ── 5. Generar JWT ────────────────────────────────────────────────
+        const setupCompletado = usuario.setup_completado === 1 || usuario.setup_completado === true;
+
         const token = jwt.sign(
           {
-            id_usuario:  usuario.id_usuario,
-            id_sucursal: usuario.id_sucursal,
-            rol:         usuario.id_rol,       
-            rol_nombre:  usuario.rol_nombre,   
-            permisos,                          
+            id_usuario:       usuario.id_usuario,
+            id_empresa:       usuario.id_empresa,
+            id_sucursal:      usuario.id_sucursal,
+            rol:              usuario.id_rol,
+            rol_nombre:       usuario.rol_nombre,
+            permisos,
+            modulos,
+            setup_completado: setupCompletado,
           },
           process.env.JWT_SECRET,
-          { expiresIn: '8h' }                  
+          { expiresIn: '8h' }
         );
 
         // ── 6. Responder ──────────────────────────────────────────────────
@@ -119,6 +135,7 @@ const login = (req, res) => {
           token,
           usuario: {
             id:               usuario.id_usuario,
+            id_empresa:       usuario.id_empresa,
             nombre:           usuario.nombre,
             apellido:         usuario.apellido,
             correo:           usuario.correo,
@@ -126,7 +143,9 @@ const login = (req, res) => {
             rol:              usuario.id_rol,
             id_sucursal:      usuario.id_sucursal,
             rol_nombre:       usuario.rol_nombre,
-            permisos,                          
+            permisos,
+            modulos,
+            setup_completado: setupCompletado,
           },
         });
       });

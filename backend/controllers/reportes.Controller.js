@@ -32,10 +32,10 @@ const obtenerReporteVentas = async (req, res) => {
     switch (tipo) {
       case 'diarias':
         query = `
-          SELECT DATE(v.fecha_venta) as fecha, COUNT(v.id_venta) as total_operaciones, SUM(v.total) as total_ingresos
+          SELECT DATE_FORMAT(v.fecha_venta, '%Y-%m-%d') as fecha, COUNT(v.id_venta) as total_operaciones, SUM(v.total) as total_ingresos
           FROM venta v
           WHERE ${whereClause}
-          GROUP BY DATE(v.fecha_venta)
+          GROUP BY DATE_FORMAT(v.fecha_venta, '%Y-%m-%d')
           ORDER BY fecha DESC
         `;
         break;
@@ -73,7 +73,7 @@ const obtenerReporteVentas = async (req, res) => {
         }
         
         query = `
-          SELECT p.id_producto, p.nombre, p.codigo_barras, 
+          SELECT p.id_producto, p.nombre,
                  SUM(
                    CASE WHEN d.tipo_cantidad = 'CAJA' THEN d.cantidad * l.unidades_por_caja ELSE d.cantidad END
                  ) as unidades_vendidas,
@@ -83,7 +83,7 @@ const obtenerReporteVentas = async (req, res) => {
           JOIN producto p ON d.id_producto = p.id_producto
           JOIN lote l ON d.id_lote = l.id_lote
           WHERE ${productoWhere}
-          GROUP BY p.id_producto, p.nombre, p.codigo_barras
+          GROUP BY p.id_producto, p.nombre
           ORDER BY total_generado DESC
         `;
         break;
@@ -190,7 +190,8 @@ const obtenerReporteCompras = async (req, res) => {
 const obtenerReporteInventario = async (req, res) => {
   const { id_producto } = req.query;
   const tipo = req.params.tipo || req.query.tipo;
-  const sucursalId = req.user?.id_sucursal;
+  const sucursalId  = req.user?.id_sucursal;
+  const empresaId   = req.user?.id_empresa;
 
   try {
     let query = '';
@@ -200,14 +201,14 @@ const obtenerReporteInventario = async (req, res) => {
       case 'actual':
       case 'valorizado':
         query = `
-          SELECT p.id_producto, p.nombre, p.codigo_barras, c.nombre as categoria,
+          SELECT p.id_producto, p.nombre, c.nombre as categoria,
                  SUM(l.stock_unidades) as stock_total_unidades,
                  SUM(l.stock_unidades * l.precio_por_caja / l.unidades_por_caja) as costo_total_estimado
           FROM lote l
           JOIN producto p ON l.id_producto = p.id_producto
           LEFT JOIN clasificacion_producto c ON p.id_clasificacion = c.id_clasificacion
           WHERE l.id_sucursal = ? AND l.activo = 1 AND l.stock_unidades > 0
-          GROUP BY p.id_producto, p.nombre, p.codigo_barras, c.nombre
+          GROUP BY p.id_producto, p.nombre, c.nombre
           ORDER BY p.nombre ASC
         `;
         params.push(sucursalId);
@@ -215,12 +216,12 @@ const obtenerReporteInventario = async (req, res) => {
 
       case 'stock_bajo':
         query = `
-          SELECT p.id_producto, p.nombre, p.codigo_barras, p.stock_minimo,
+          SELECT p.id_producto, p.nombre, p.stock_minimo,
                  SUM(l.stock_unidades) as stock_total_unidades
           FROM lote l
           JOIN producto p ON l.id_producto = p.id_producto
           WHERE l.id_sucursal = ? AND l.activo = 1
-          GROUP BY p.id_producto, p.nombre, p.codigo_barras, p.stock_minimo
+          GROUP BY p.id_producto, p.nombre, p.stock_minimo
           HAVING stock_total_unidades <= p.stock_minimo
           ORDER BY stock_total_unidades ASC
         `;
@@ -255,6 +256,25 @@ const obtenerReporteInventario = async (req, res) => {
         params.push(sucursalId, id_producto);
         break;
 
+      case 'por_sucursal':
+        query = `
+          SELECT
+            p.id_producto, p.nombre,
+            c.nombre  AS categoria,
+            s.id_sucursal, s.nombre AS sucursal_nombre, s.ciudad,
+            SUM(l.stock_unidades) AS stock_unidades
+          FROM lote l
+          JOIN producto   p ON l.id_producto    = p.id_producto
+          JOIN sucursal   s ON l.id_sucursal     = s.id_sucursal
+          LEFT JOIN clasificacion_producto c ON p.id_clasificacion = c.id_clasificacion
+          WHERE s.id_empresa = ? AND l.activo = 1 AND l.stock_unidades > 0
+          GROUP BY p.id_producto, p.nombre, c.nombre,
+                   s.id_sucursal, s.nombre, s.ciudad
+          ORDER BY p.nombre ASC, s.nombre ASC
+        `;
+        params.push(empresaId);
+        break;
+
       default:
         return res.status(400).json({ error: 'Tipo de reporte de inventario no válido.' });
     }
@@ -264,6 +284,11 @@ const obtenerReporteInventario = async (req, res) => {
     let resumen = { total_registros: rows.length };
     if (tipo === 'valorizado') {
       resumen.valor_total = rows.reduce((acc, r) => acc + parseFloat(r.costo_total_estimado || 0), 0);
+    }
+    if (tipo === 'por_sucursal') {
+      const productosUnicos = new Set(rows.map(r => r.id_producto)).size;
+      const totalUnidades   = rows.reduce((acc, r) => acc + parseInt(r.stock_unidades || 0), 0);
+      resumen = { total_registros: productosUnicos, total_unidades: totalUnidades };
     }
 
     return res.json({ data: rows, resumen });
@@ -278,9 +303,18 @@ const obtenerReporteInventario = async (req, res) => {
 // ==========================================
 const obtenerResumenFinanciero = async (req, res) => {
   const { fechaInicio, fechaFin } = req.query;
-  const sucursalId = req.query.id_sucursal || req.user?.id_sucursal;
+  const id_empresa = req.user.id_empresa;
+  let sucursalId = req.user.id_sucursal;
 
   try {
+    // Validar que el id_sucursal del query pertenece a la empresa del usuario
+    if (req.query.id_sucursal) {
+      const [ck] = await db.promise().query(
+        'SELECT 1 FROM sucursal WHERE id_sucursal = ? AND id_empresa = ?',
+        [req.query.id_sucursal, id_empresa]
+      );
+      if (ck.length > 0) sucursalId = req.query.id_sucursal;
+    }
     let ventaFechaClause = '';
     let ventaFechaParams = [];
     let compraFechaClause = '';
@@ -328,12 +362,21 @@ const obtenerResumenFinanciero = async (req, res) => {
 
 const obtenerTopProductos = async (req, res) => {
   const { id_sucursal, ordenar_por } = req.query;
-  const sucursalId = id_sucursal || req.user?.id_sucursal;
+  const id_empresa  = req.user.id_empresa;
   const orderColumn = ordenar_por === 'ingresos' ? 'ingresos_generados' : 'unidades_vendidas';
+  let sucursalId    = req.user.id_sucursal;
 
   try {
+    // Validar que el id_sucursal del query pertenece a la empresa del usuario
+    if (id_sucursal) {
+      const [ck] = await db.promise().query(
+        'SELECT 1 FROM sucursal WHERE id_sucursal = ? AND id_empresa = ?',
+        [id_sucursal, id_empresa]
+      );
+      if (ck.length > 0) sucursalId = id_sucursal;
+    }
     const [rows] = await db.promise().query(`
-      SELECT p.id_producto, p.nombre, p.codigo_barras,
+      SELECT p.id_producto, p.nombre,
         SUM(CASE WHEN d.tipo_cantidad = 'CAJA' THEN d.cantidad * l.unidades_por_caja ELSE d.cantidad END) as unidades_vendidas,
         SUM(d.subtotal) as ingresos_generados
       FROM detalle_venta d
@@ -341,7 +384,7 @@ const obtenerTopProductos = async (req, res) => {
       JOIN producto p ON d.id_producto = p.id_producto
       JOIN lote l ON d.id_lote = l.id_lote
       WHERE v.estado = 'COMPLETADA' AND v.id_sucursal = ?
-      GROUP BY p.id_producto, p.nombre, p.codigo_barras
+      GROUP BY p.id_producto, p.nombre
       ORDER BY ${orderColumn} DESC LIMIT 10
     `, [sucursalId]);
 
@@ -352,15 +395,21 @@ const obtenerTopProductos = async (req, res) => {
 };
 
 const obtenerAlertasVencimiento = async (req, res) => {
+  const empresaId = req.user?.id_empresa;
+  if (!empresaId) return res.status(400).json({ error: 'No se pudo identificar la empresa del usuario.' });
+
   try {
     const [rows] = await db.promise().query(`
       SELECT l.id_lote, l.numero_lote, l.fecha_vencimiento, l.stock_unidades, p.nombre as producto_nombre,
              DATEDIFF(l.fecha_vencimiento, CURDATE()) as dias_restantes
       FROM lote l
       JOIN producto p ON l.id_producto = p.id_producto
-      WHERE l.activo = 1 AND l.stock_unidades > 0 AND l.fecha_vencimiento IS NOT NULL AND DATEDIFF(l.fecha_vencimiento, CURDATE()) <= 30
+      JOIN sucursal s ON l.id_sucursal = s.id_sucursal
+      WHERE s.id_empresa = ? AND l.activo = 1 AND l.stock_unidades > 0
+        AND l.fecha_vencimiento IS NOT NULL
+        AND DATEDIFF(l.fecha_vencimiento, CURDATE()) <= 30
       ORDER BY dias_restantes ASC
-    `);
+    `, [empresaId]);
     return res.json(rows);
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -384,7 +433,7 @@ const obtenerReporteGananciasProducto = async (req, res) => {
     }
 
     const query = `
-      SELECT p.id_producto, p.nombre, p.codigo_barras,
+      SELECT p.id_producto, p.nombre,
         SUM(CASE WHEN dv.tipo_cantidad = 'CAJA' THEN dv.cantidad * l.unidades_por_caja ELSE dv.cantidad END) as unidades_vendidas,
         SUM(dv.subtotal) as total_ingresos,
         SUM(CASE WHEN dv.tipo_cantidad = 'CAJA'
@@ -400,7 +449,7 @@ const obtenerReporteGananciasProducto = async (req, res) => {
       JOIN producto p ON dv.id_producto = p.id_producto
       JOIN lote l ON dv.id_lote = l.id_lote
       WHERE ${whereClause}
-      GROUP BY p.id_producto, p.nombre, p.codigo_barras
+      GROUP BY p.id_producto, p.nombre
       ORDER BY ganancia_bruta DESC
     `;
 
@@ -466,6 +515,7 @@ const obtenerReporteTraslados = async (req, res) => {
 // ==========================================
 const obtenerReporteComparativoSucursales = async (req, res) => {
   const { fechaInicio, fechaFin } = req.query;
+  const id_empresa = req.user.id_empresa;
 
   try {
     const params = [];
@@ -475,6 +525,8 @@ const obtenerReporteComparativoSucursales = async (req, res) => {
       ventaJoinWhere += ` AND DATE(v.fecha_venta) BETWEEN ? AND ?`;
       params.push(fechaInicio, fechaFin);
     }
+
+    params.push(id_empresa);
 
     const query = `
       SELECT s.id_sucursal, s.nombre as sucursal, s.ciudad,
@@ -491,7 +543,7 @@ const obtenerReporteComparativoSucursales = async (req, res) => {
       LEFT JOIN venta v ON s.id_sucursal = v.id_sucursal AND ${ventaJoinWhere}
       LEFT JOIN detalle_venta dv ON v.id_venta = dv.id_venta
       LEFT JOIN lote l ON dv.id_lote = l.id_lote
-      WHERE s.activo = 1
+      WHERE s.activo = 1 AND s.id_empresa = ?
       GROUP BY s.id_sucursal, s.nombre, s.ciudad
       ORDER BY total_ingresos DESC
     `;

@@ -1,7 +1,12 @@
 import { useState, useEffect } from 'react';
 import almacenService from '../../../services/almacen.service';
+import { usePermission } from '../../../hooks/usePermission';
 
 export default function DetalleLoteModal({ loteId, onClose }) {
+  const { puede } = usePermission();
+  const puedeVerCosto       = puede('ver_costo_lote',  'almacen');
+  const puedeVerMovimientos = puede('ver_movimientos', 'almacen');
+
   const [lote, setLote] = useState(null);
   const [cargando, setCargando] = useState(true);
 
@@ -50,7 +55,7 @@ export default function DetalleLoteModal({ loteId, onClose }) {
         </div>
 
         <div className="p-6 overflow-y-auto">
-          <div className="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className={`mb-6 grid gap-4 ${puedeVerCosto ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-4'}`}>
             <div className="p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-800">
               <p className="text-xs text-zinc-500 uppercase tracking-wide">Producto</p>
               <p className="font-semibold text-zinc-900 dark:text-zinc-100">{lote.producto_nombre}</p>
@@ -67,8 +72,18 @@ export default function DetalleLoteModal({ loteId, onClose }) {
               <p className="text-xs text-zinc-500 uppercase tracking-wide">Unidades Actuales</p>
               <p className="font-bold text-emerald-600 dark:text-emerald-400 text-lg leading-none mt-1">{lote.stock_unidades}</p>
             </div>
+            {puedeVerCosto && (
+              <div className="p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                <p className="text-xs text-zinc-500 uppercase tracking-wide">Precio/Caja</p>
+                <p className="font-bold text-amber-600 dark:text-amber-400 text-lg leading-none mt-1">
+                  Bs {parseFloat(lote.precio_por_caja || 0).toFixed(2)}
+                </p>
+              </div>
+            )}
           </div>
 
+          {puedeVerMovimientos && (
+            <>
           <h4 className="font-semibold text-zinc-900 dark:text-white mb-3">Movimientos</h4>
           <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
             <table className="w-full text-left text-sm">
@@ -113,6 +128,8 @@ export default function DetalleLoteModal({ loteId, onClose }) {
               </tbody>
             </table>
           </div>
+            </>
+          )}
         </div>
 
         <div className="px-6 py-4 bg-zinc-50 dark:bg-zinc-800/50 border-t border-zinc-200 dark:border-zinc-800 flex justify-end shrink-0">

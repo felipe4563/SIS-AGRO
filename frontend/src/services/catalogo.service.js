@@ -20,6 +20,13 @@ const catalogoService = {
   crearUnidad:        (data) => api.post('/catalogos/unidades', data),
   editarUnidad:       (id, data) => api.put(`/catalogos/unidades/${id}`, data),
   eliminarUnidad:     (id) => api.delete(`/catalogos/unidades/${id}`),
+
+  // Conversiones de unidad
+  listarConversiones:      () => api.get('/catalogos/conversiones'),
+  crearConversion:         (data) => api.post('/catalogos/conversiones', data),
+  editarConversion:        (id, data) => api.put(`/catalogos/conversiones/${id}`, data),
+  toggleActivoConversion:  (id, activo) => api.patch(`/catalogos/conversiones/${id}/activo`, { activo }),
+  eliminarConversion:      (id) => api.delete(`/catalogos/conversiones/${id}`),
 };
 
 export default catalogoService;

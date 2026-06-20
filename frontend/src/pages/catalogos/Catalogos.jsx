@@ -19,15 +19,25 @@ function Toast({ toast }) {
   );
 }
 
+const TABS_DEF = [
+  { id: 'clasificaciones', label: 'Clasificaciones' },
+  { id: 'marcas',          label: 'Marcas'          },
+  { id: 'unidades',        label: 'Unidades'        },
+  { id: 'conversiones',    label: 'Conversiones'    },
+];
+
 export default function Catalogos() {
   const { puede } = usePermission();
 
-  const [activeTab, setActiveTab] = useState('clasificaciones'); // clasificaciones, marcas, unidades
-  
+  const tabsVisibles = TABS_DEF.filter(t => puede('ver', t.id));
+
+  const [activeTab, setActiveTab] = useState(() => tabsVisibles[0]?.id ?? null);
+
   const [datos, setDatos] = useState({
     clasificaciones: [],
     marcas: [],
-    unidades: []
+    unidades: [],
+    conversiones: []
   });
 
   const [cargando, setCargando] = useState(true);
@@ -43,24 +53,36 @@ export default function Catalogos() {
   };
 
   const cargarDatos = useCallback(async () => {
+    if (tabsVisibles.length === 0) return;
     setCargando(true);
     try {
-      const [resClas, resMar, resUni] = await Promise.all([
-        catalogoService.listarClasificaciones(),
-        catalogoService.listarMarcas(),
-        catalogoService.listarUnidades()
+      const calls = {
+        clasificaciones: puede('ver', 'clasificaciones') ? catalogoService.listarClasificaciones() : null,
+        marcas:          puede('ver', 'marcas')          ? catalogoService.listarMarcas()          : null,
+        unidades:        puede('ver', 'unidades')        ? catalogoService.listarUnidades()        : null,
+        conversiones:    puede('ver', 'conversiones')    ? catalogoService.listarConversiones()    : null,
+      };
+      // Siempre cargamos unidades (necesarias para el selector de conversiones)
+      const unidadesCall = calls.unidades ?? catalogoService.listarUnidades();
+
+      const [resClas, resMar, resUni, resCon] = await Promise.all([
+        calls.clasificaciones ?? Promise.resolve({ data: [] }),
+        calls.marcas          ?? Promise.resolve({ data: [] }),
+        unidadesCall,
+        calls.conversiones    ?? Promise.resolve({ data: [] }),
       ]);
       setDatos({
         clasificaciones: resClas.data,
-        marcas: resMar.data,
-        unidades: resUni.data
+        marcas:          resMar.data,
+        unidades:        resUni.data,
+        conversiones:    resCon.data,
       });
-    } catch (err) {
+    } catch {
       mostrarToast('error', 'Error al cargar los catálogos');
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, []); // eslint-disable-line
 
   useEffect(() => {
     cargarDatos();
@@ -93,6 +115,9 @@ export default function Catalogos() {
       } else if (activeTab === 'unidades') {
         if (modalType === 'crear') await catalogoService.crearUnidad(formData);
         else await catalogoService.editarUnidad(itemActivo.id_unidad, formData);
+      } else if (activeTab === 'conversiones') {
+        if (modalType === 'crear') await catalogoService.crearConversion(formData);
+        else await catalogoService.editarConversion(itemActivo.id_conversion, formData);
       }
       mostrarToast('ok', 'Guardado correctamente');
       setModalType(null);
@@ -111,8 +136,10 @@ export default function Catalogos() {
       if (activeTab === 'clasificaciones') await catalogoService.eliminarClasificacion(itemActivo.id_clasificacion);
       else if (activeTab === 'marcas') await catalogoService.eliminarMarca(itemActivo.id_marca);
       else if (activeTab === 'unidades') await catalogoService.eliminarUnidad(itemActivo.id_unidad);
-      
-      mostrarToast('ok', activeTab === 'unidades' ? 'Eliminado correctamente' : 'Desactivado correctamente');
+      else if (activeTab === 'conversiones') await catalogoService.eliminarConversion(itemActivo.id_conversion);
+
+      const esEliminar = activeTab === 'unidades' || activeTab === 'conversiones';
+      mostrarToast('ok', esEliminar ? 'Eliminado correctamente' : 'Desactivado correctamente');
       setModalType(null);
       await cargarDatos();
     } catch (err) {
@@ -129,6 +156,8 @@ export default function Catalogos() {
         await catalogoService.toggleActivoClasificacion(item.id_clasificacion, nuevoEstado);
       } else if (activeTab === 'marcas') {
         await catalogoService.toggleActivoMarca(item.id_marca, nuevoEstado);
+      } else if (activeTab === 'conversiones') {
+        await catalogoService.toggleActivoConversion(item.id_conversion, nuevoEstado);
       }
       mostrarToast('ok', `Estado actualizado`);
       await cargarDatos();
@@ -138,8 +167,23 @@ export default function Catalogos() {
     }
   };
 
-  // Permisos según el tab activo
-  const puedeCrear = puede('crear', activeTab);
+  const puedeCrear = activeTab ? puede('crear', activeTab) : false;
+
+  if (tabsVisibles.length === 0) {
+    return (
+      <PageWrapper>
+        <div className="flex flex-col items-center justify-center h-[70vh] text-center px-4">
+          <div className="w-20 h-20 bg-red-50 dark:bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mb-4">
+            <svg className="w-10 h-10" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-black text-zinc-900 dark:text-white mb-2">Acceso Denegado</h1>
+          <p className="text-zinc-500 max-w-md">No tienes permiso para ver ningún catálogo. Contacta al administrador.</p>
+        </div>
+      </PageWrapper>
+    );
+  }
 
   return (
     <PageWrapper>
@@ -167,38 +211,21 @@ export default function Catalogos() {
         )}
       </div>
 
-      {/* TABS */}
+      {/* TABS — solo los que el usuario puede ver */}
       <div className="flex space-x-1 bg-zinc-100 dark:bg-zinc-800/50 p-1 rounded-xl mb-6 max-w-fit">
-        <button
-          onClick={() => setActiveTab('clasificaciones')}
-          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-            activeTab === 'clasificaciones' 
-              ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm' 
-              : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
-          }`}
-        >
-          Clasificaciones
-        </button>
-        <button
-          onClick={() => setActiveTab('marcas')}
-          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-            activeTab === 'marcas' 
-              ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm' 
-              : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
-          }`}
-        >
-          Marcas
-        </button>
-        <button
-          onClick={() => setActiveTab('unidades')}
-          className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-            activeTab === 'unidades' 
-              ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm' 
-              : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
-          }`}
-        >
-          Unidades
-        </button>
+        {tabsVisibles.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+              activeTab === tab.id
+                ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
+                : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       <TablaCatalogos
@@ -217,6 +244,7 @@ export default function Catalogos() {
           onConfirm={handleGuardar}
           onClose={() => setModalType(null)}
           guardando={guardando}
+          unidades={datos.unidades}
         />
       )}
 

@@ -42,11 +42,12 @@ router.get('/compras/:tipo', requireDynamicPermission({
 // RUTAS DE INVENTARIO
 // ==========================================
 router.get('/inventario/:tipo', requireDynamicPermission({
-  'actual': 'inventario',
-  'valorizado': 'inventario_valorizado',
-  'stock_bajo': 'stock_bajo',
-  'vencimientos': 'vencimientos',
-  'kardex': 'kardex'
+  'actual':        'inventario',
+  'valorizado':    'inventario_valorizado',
+  'stock_bajo':    'stock_bajo',
+  'vencimientos':  'vencimientos',
+  'kardex':        'kardex',
+  'por_sucursal':  'inventario',
 }), ctrl.obtenerReporteInventario);
 
 // ==========================================

@@ -5,7 +5,7 @@ const { authMiddleware, checkPermission } = require('../middlewares/authMiddlewa
 router.use(authMiddleware);
 
 router.get('/', checkPermission('ver', 'clientes'), ctrl.listar);
-router.get('/:id', checkPermission('ver', 'clientes'), ctrl.obtener);
+router.get('/:id', checkPermission('ver_detalle', 'clientes'), ctrl.obtener);
 router.post('/', checkPermission('crear', 'clientes'), ctrl.crear);
 router.put('/:id', checkPermission('editar', 'clientes'), ctrl.editar);
 router.delete('/:id', checkPermission('eliminar', 'clientes'), ctrl.eliminar);

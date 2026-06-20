@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import PageWrapper from '../../components/PageWrapper';
 import reporteService from '../../services/reporte.service';
+import { usePermission } from '../../hooks/usePermission';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
@@ -8,6 +9,11 @@ import * as htmlToImage from 'html-to-image';
 import { jsPDF } from 'jspdf';
 
 export default function DashboardReportes() {
+  const { puede } = usePermission();
+  const puedeVerGanancias   = puede('ganancias',    'reportes');
+  const puedeVerTop         = puede('top_productos','reportes');
+  const puedeVerVencimientos = puede('vencimientos','reportes');
+
   const [financiero, setFinanciero] = useState(null);
   const [topProductos, setTopProductos] = useState([]);
   const [vencimientos, setVencimientos] = useState([]);
@@ -17,23 +23,31 @@ export default function DashboardReportes() {
   const dashboardRef = useRef(null);
 
   useEffect(() => {
-    cargarReportes();
+    if (puedeVerGanancias || puedeVerTop || puedeVerVencimientos) {
+      cargarReportes();
+    } else {
+      setCargando(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const cargarReportes = async () => {
     setCargando(true);
     try {
-      const [finRes, topRes, venRes] = await Promise.all([
-        reporteService.financiero(),
-        reporteService.topProductos(),
-        reporteService.vencimientos()
-      ]);
-      setFinanciero(finRes.data);
-      setTopProductos(topRes.data);
-      setVencimientos(venRes.data);
+      const peticiones = [];
+      if (puedeVerGanancias)    peticiones.push(reporteService.financiero().then(r => ({ tipo: 'financiero', data: r.data })).catch(() => null));
+      if (puedeVerTop)          peticiones.push(reporteService.topProductos().then(r => ({ tipo: 'top', data: r.data })).catch(() => null));
+      if (puedeVerVencimientos) peticiones.push(reporteService.vencimientos().then(r => ({ tipo: 'venc', data: r.data })).catch(() => null));
+
+      const resultados = await Promise.all(peticiones);
+      resultados.forEach(r => {
+        if (!r) return;
+        if (r.tipo === 'financiero') setFinanciero(r.data);
+        if (r.tipo === 'top')        setTopProductos(r.data);
+        if (r.tipo === 'venc')       setVencimientos(r.data);
+      });
     } catch (err) {
       console.error(err);
-      alert('Error al cargar datos del dashboard');
     } finally {
       setCargando(false);
     }
@@ -72,6 +86,22 @@ export default function DashboardReportes() {
       setExportando(false);
     }
   };
+
+  if (!puedeVerGanancias && !puedeVerTop && !puedeVerVencimientos) {
+    return (
+      <PageWrapper>
+        <div className="flex flex-col items-center justify-center h-[70vh] text-center px-4">
+          <div className="w-20 h-20 bg-red-50 dark:bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mb-4">
+            <svg className="w-10 h-10" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-black text-zinc-900 dark:text-white mb-2">Acceso Denegado</h1>
+          <p className="text-zinc-500 max-w-md">No tienes permiso para ver el dashboard gerencial. Contacta al administrador.</p>
+        </div>
+      </PageWrapper>
+    );
+  }
 
   if (cargando) {
     return (
@@ -124,7 +154,7 @@ export default function DashboardReportes() {
         </div>
 
         {/* Tarjetas KPI (Financiero) */}
-        {financiero && (
+        {puedeVerGanancias && financiero && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 border border-zinc-200 dark:border-zinc-800 shadow-sm relative overflow-hidden">
               <div className="absolute top-0 right-0 p-4 opacity-10">
@@ -149,7 +179,7 @@ export default function DashboardReportes() {
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {/* Gráfico Top 5 */}
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-6">
+          {puedeVerTop && <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-6">
             <h3 className="font-bold text-lg text-zinc-900 dark:text-white mb-6 flex items-center gap-2">
               🏆 Top 5 Productos Más Vendidos
             </h3>
@@ -158,7 +188,7 @@ export default function DashboardReportes() {
               <div className="h-64 flex items-center justify-center text-zinc-400">No hay datos de ventas suficientes</div>
             ) : (
               <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <BarChart data={topProductos} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#3f3f46" opacity={0.2} />
                     <XAxis type="number" tick={{fill: '#71717a', fontSize: 12}} />
@@ -177,10 +207,10 @@ export default function DashboardReportes() {
                 </ResponsiveContainer>
               </div>
             )}
-          </div>
+          </div>}
 
           {/* Alertas de Vencimiento */}
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden flex flex-col">
+          {puedeVerVencimientos && <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden flex flex-col">
             <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 shrink-0">
               <h3 className="font-bold text-lg text-red-600 dark:text-red-400 flex items-center gap-2">
                 ⚠️ Alertas de Vencimiento (Próximos 30 días)
@@ -227,7 +257,7 @@ export default function DashboardReportes() {
                 </table>
               )}
             </div>
-          </div>
+          </div>}
         </div>
       </div>
     </PageWrapper>

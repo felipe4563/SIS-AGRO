@@ -23,6 +23,8 @@ const configuracionRoutes = require('./routes/configuracion.Routes');
 const movimientosRoutes          = require('./routes/movimientos.Routes');
 const categoriasMovimientoRoutes = require('./routes/categoriasMovimiento.Routes');
 const webhookRoutes              = require('./routes/webhook.Routes');
+const setupRoutes                = require('./routes/setup.Routes');
+const creditosRoutes             = require('./routes/creditos.Routes');
 const { iniciarScheduler } = require('./services/backup.service');
 const app = express();
 
@@ -30,6 +32,7 @@ const app = express();
 const corsOptions = {
   origin: [
     'http://localhost:5173',
+    'http://localhost:5174',
     'https://atm-zoo-measurements-newspapers.trycloudflare.com',
   ],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -69,6 +72,9 @@ app.use('/api/backups',  backupRoutes);
 app.use('/api/configuracion', configuracionRoutes);
 app.use('/api/movimientos',           movimientosRoutes);
 app.use('/api/categorias-movimiento', categoriasMovimientoRoutes);
+app.use('/api/admin', require('./routes/admin'));
+app.use('/api/setup', setupRoutes);
+app.use('/api/creditos', creditosRoutes);
 
 // ── Servidor ──────────────────────────────────────────────────────────────
 if (process.env.NODE_ENV !== 'test') {

@@ -8,7 +8,8 @@ const cajaService = {
   listarTurnos:       () => api.get('/caja/turnos'),
   obtenerTurnoActivo: () => api.get('/caja/turno-activo'),
   abrirCaja:          (data) => api.post('/caja/abrir', data),
-  cerrarCaja:         (id, data) => api.patch(`/caja/${id}/cerrar`, data),
+  cerrarCaja:              (id, data) => api.patch(`/caja/${id}/cerrar`, data),
+  listarMovimientosTurno:  () => api.get('/caja/movimientos-turno'),
 };
 
 export default cajaService;

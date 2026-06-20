@@ -2,13 +2,17 @@ const db = require('../config/db');
 
 // Listar compras con datos del proveedor y usuario
 const listar = async (req, res) => {
+  const id_empresa = req.user.id_empresa;
   try {
     const [rows] = await db.promise().query(
       `SELECT c.*, p.empresa as proveedor_nombre, u.nombre as usuario_nombre, u.apellido as usuario_apellido
        FROM compra c
+       JOIN sucursal s ON c.id_sucursal = s.id_sucursal
        LEFT JOIN proveedor p ON c.id_proveedor = p.id_proveedor
        LEFT JOIN usuario u ON c.id_usuario = u.id_usuario
-       ORDER BY c.fecha_compra DESC, c.id_compra DESC`
+       WHERE s.id_empresa = ?
+       ORDER BY c.fecha_compra DESC, c.id_compra DESC`,
+      [id_empresa]
     );
     return res.json(rows);
   } catch (err) {
@@ -24,10 +28,11 @@ const obtener = async (req, res) => {
     const [compraRows] = await db.promise().query(
       `SELECT c.*, p.empresa as proveedor_nombre, u.nombre as usuario_nombre, u.apellido as usuario_apellido
        FROM compra c
+       JOIN sucursal s ON c.id_sucursal = s.id_sucursal
        LEFT JOIN proveedor p ON c.id_proveedor = p.id_proveedor
        LEFT JOIN usuario u ON c.id_usuario = u.id_usuario
-       WHERE c.id_compra = ?`, 
-      [id]
+       WHERE c.id_compra = ? AND s.id_empresa = ?`,
+      [id, req.user.id_empresa]
     );
 
     if (compraRows.length === 0) return res.status(404).json({ error: 'Compra no encontrada' });
@@ -35,7 +40,7 @@ const obtener = async (req, res) => {
     const compra = compraRows[0];
 
     const [detalleRows] = await db.promise().query(
-      `SELECT d.*, prod.nombre as producto_nombre, prod.codigo_barras
+      `SELECT d.*, prod.nombre as producto_nombre
        FROM detalle_compra d
        JOIN producto prod ON d.id_producto = prod.id_producto
        WHERE d.id_compra = ?`,
@@ -52,24 +57,42 @@ const obtener = async (req, res) => {
 
 // Crear nueva compra (Transacción)
 const crear = async (req, res) => {
-  const { id_proveedor, nro_factura, fecha_compra, subtotal, descuento, total, observaciones, detalles } = req.body;
+  const {
+    id_proveedor, nro_factura, fecha_compra, subtotal, descuento, total,
+    observaciones, detalles,
+    metodo_pago, monto_pagado, fecha_vencimiento_credito,
+  } = req.body;
   const id_usuario = req.user.id_usuario;
-  const id_sucursal = req.user.id_sucursal; // Sucursal del usuario actual
+  const id_sucursal = req.user.id_sucursal;
 
   if (!id_proveedor || !detalles || detalles.length === 0) {
     return res.status(400).json({ error: 'Faltan datos requeridos (proveedor o detalles)' });
   }
 
+  const metodoPagoFinal = metodo_pago || 'EFECTIVO';
+  const montoPagadoFinal = metodoPagoFinal === 'CREDITO'
+    ? parseFloat(monto_pagado || 0)
+    : parseFloat(total);
+  const estadoCredito = metodoPagoFinal === 'CREDITO'
+    ? (montoPagadoFinal >= parseFloat(total) ? 'PAGADO' : montoPagadoFinal > 0 ? 'PARCIAL' : 'PENDIENTE')
+    : null;
+
   const connection = await db.promise().getConnection();
-  
+
   try {
     await connection.beginTransaction();
 
     // 1. Insertar Cabecera
     const [compraResult] = await connection.query(
-      `INSERT INTO compra (id_proveedor, id_sucursal, id_usuario, nro_factura, fecha_compra, subtotal, descuento, total, estado, observaciones) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDIENTE', ?)`,
-      [id_proveedor, id_sucursal, id_usuario, nro_factura || null, fecha_compra, subtotal, descuento, total, observaciones || null]
+      `INSERT INTO compra (id_proveedor, id_sucursal, id_usuario, nro_factura, fecha_compra, subtotal, descuento, total, estado, observaciones, metodo_pago, monto_pagado, fecha_vencimiento_credito, estado_credito)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDIENTE', ?, ?, ?, ?, ?)`,
+      [
+        id_proveedor, id_sucursal, id_usuario, nro_factura || null, fecha_compra,
+        subtotal, descuento, total, observaciones || null,
+        metodoPagoFinal, montoPagadoFinal,
+        metodoPagoFinal === 'CREDITO' ? (fecha_vencimiento_credito || null) : null,
+        estadoCredito,
+      ]
     );
 
     const id_compra = compraResult.insertId;
@@ -175,9 +198,15 @@ const confirmar = async (req, res) => {
 // Anular compra (Solo si está PENDIENTE por ahora, para no complicar el recalculo de stock si ya se vendió algo del lote)
 const anular = async (req, res) => {
   const { id } = req.params;
+  const id_empresa = req.user.id_empresa;
 
   try {
-    const [rows] = await db.promise().query('SELECT estado FROM compra WHERE id_compra = ?', [id]);
+    const [rows] = await db.promise().query(
+      `SELECT c.estado FROM compra c
+       JOIN sucursal s ON c.id_sucursal = s.id_sucursal
+       WHERE c.id_compra = ? AND s.id_empresa = ?`,
+      [id, id_empresa]
+    );
     if (rows.length === 0) return res.status(404).json({ error: 'Compra no encontrada' });
     
     if (rows[0].estado === 'RECIBIDO') {

@@ -6,6 +6,7 @@ import usuarioService from '../../services/usuario.service';
 import rolService from '../../services/rol.service';
 import sucursalService from '../../services/sucursal.service';
 import { usePermission } from '../../hooks/usePermission';
+import PlanLimiteModal from '../../components/PlanLimiteModal';
 
 function Toast({ toast }) {
   if (!toast) return null;
@@ -30,6 +31,7 @@ export default function Usuarios() {
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [toast, setToast] = useState(null);
+  const [mensajeLimite, setMensajeLimite] = useState(null);
 
   // Modales
   const [modalType, setModalType] = useState(null); // 'crear', 'editar', 'eliminar', 'reset', 'sucursal', null
@@ -100,7 +102,12 @@ export default function Usuarios() {
       setModalType(null);
       await cargarDatos();
     } catch (err) {
-      mostrarToast('error', err.response?.data?.error || 'Error al guardar usuario');
+      if (err.response?.status === 403) {
+        setModalType(null);
+        setMensajeLimite(err.response.data?.error);
+      } else {
+        mostrarToast('error', err.response?.data?.error || 'Error al guardar usuario');
+      }
     } finally {
       setGuardando(false);
     }
@@ -168,6 +175,7 @@ export default function Usuarios() {
   return (
     <PageWrapper>
       <Toast toast={toast} />
+      <PlanLimiteModal mensaje={mensajeLimite} onClose={() => setMensajeLimite(null)} />
 
       <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>

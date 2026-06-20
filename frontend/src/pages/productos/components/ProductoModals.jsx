@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_URL.replace('/api', '');
 
@@ -7,25 +7,30 @@ export function ModalCrearEditar({
   clasificaciones = [],
   marcas = [],
   unidades = [],
+  conversiones = [],
+  fraccionesIniciales = [],
   onConfirm,
   onClose,
   guardando
 }) {
   const isEditing = !!producto;
-  
+
   const [formData, setFormData] = useState({
     id_clasificacion: '',
     id_marca: '',
     id_unidad: '',
     nombre: '',
     descripcion: '',
-    codigo_barras: '',
     precio_mayor: 0,
     precio_menor: 0,
     descuento_mayor: 0,
     descuento_menor: 0,
     stock_minimo: 0,
+    permite_fraccion: false,
   });
+
+  // Mapa de precios por id_conversion: { [id]: { precio_mayor, precio_menor } }
+  const [fraccionPrecios, setFraccionPrecios] = useState({});
 
   useEffect(() => {
     if (producto) {
@@ -35,27 +40,87 @@ export function ModalCrearEditar({
         id_unidad:        producto.id_unidad || '',
         nombre:           producto.nombre || '',
         descripcion:      producto.descripcion || '',
-        codigo_barras:    producto.codigo_barras || '',
         precio_mayor:     producto.precio_mayor || 0,
         precio_menor:     producto.precio_menor || 0,
         descuento_mayor:  producto.descuento_mayor || 0,
         descuento_menor:  producto.descuento_menor || 0,
         stock_minimo:     producto.stock_minimo || 0,
+        permite_fraccion: !!producto.permite_fraccion,
       });
     }
   }, [producto]);
 
+  // Cargar precios existentes cuando se abren las fracciones iniciales
+  useEffect(() => {
+    if (fraccionesIniciales.length > 0) {
+      const mapa = {};
+      for (const f of fraccionesIniciales) {
+        if (f.precio_mayor != null || f.precio_menor != null) {
+          mapa[f.id_conversion] = {
+            precio_mayor: f.precio_mayor ?? 0,
+            precio_menor: f.precio_menor ?? 0,
+          };
+        }
+      }
+      setFraccionPrecios(mapa);
+    }
+  }, [fraccionesIniciales]);
+
+  // Conversiones que aplican a la unidad seleccionada en este producto
+  const conversionesFiltradas = useMemo(
+    () => conversiones.filter(c => c.id_unidad_base === Number(formData.id_unidad)),
+    [conversiones, formData.id_unidad]
+  );
+
   const handleChange = (e) => {
-    const { name, value, type } = e.target;
-    setFormData(prev => ({ 
-      ...prev, 
-      [name]: type === 'number' ? (value === '' ? '' : Number(value)) : value 
+    const { name, value, type, checked } = e.target;
+    const newVal = type === 'checkbox' ? checked : (type === 'number' ? (value === '' ? '' : Number(value)) : value);
+
+    if (name === 'id_unidad') {
+      const conv = conversiones.filter(c => c.id_unidad_base === Number(value));
+      if (conv.length === 0) {
+        setFormData(prev => ({ ...prev, id_unidad: newVal, permite_fraccion: false }));
+        setFraccionPrecios({});
+        return;
+      }
+    }
+
+    setFormData(prev => ({ ...prev, [name]: newVal }));
+  };
+
+  const handleToggleFraccion = (id_conversion) => {
+    setFraccionPrecios(prev => {
+      if (prev[id_conversion]) {
+        const next = { ...prev };
+        delete next[id_conversion];
+        return next;
+      }
+      return { ...prev, [id_conversion]: { precio_mayor: '', precio_menor: '' } };
+    });
+  };
+
+  const handleFraccionPrecio = (id_conversion, campo, valor) => {
+    setFraccionPrecios(prev => ({
+      ...prev,
+      [id_conversion]: {
+        ...(prev[id_conversion] || { precio_mayor: '', precio_menor: '' }),
+        [campo]: valor,
+      },
     }));
   };
 
+  const buildFracciones = () =>
+    conversionesFiltradas
+      .filter(c => fraccionPrecios[c.id_conversion])
+      .map(c => ({
+        id_conversion: c.id_conversion,
+        precio_mayor:  parseFloat(fraccionPrecios[c.id_conversion]?.precio_mayor) || 0,
+        precio_menor:  parseFloat(fraccionPrecios[c.id_conversion]?.precio_menor) || 0,
+      }));
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    onConfirm(formData);
+    onConfirm({ ...formData, fracciones: buildFracciones() });
   };
 
   return (
@@ -75,8 +140,8 @@ export function ModalCrearEditar({
         <div className="p-6 overflow-y-auto">
           <form id="producto-form" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-4">
             
-            {/* Fila 1: Nombres y Código */}
-            <div className="md:col-span-2">
+            {/* Fila 1: Nombre */}
+            <div className="md:col-span-3">
               <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">
                 Nombre del Producto *
               </label>
@@ -88,20 +153,6 @@ export function ModalCrearEditar({
                 onChange={handleChange}
                 className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 outline-none transition-all"
                 placeholder="Ej. Fertilizante NPK"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">
-                Código de Barras
-              </label>
-              <input
-                type="text"
-                name="codigo_barras"
-                value={formData.codigo_barras}
-                onChange={handleChange}
-                className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 outline-none transition-all"
-                placeholder="Ej. 123456789012"
               />
             </div>
 
@@ -229,7 +280,91 @@ export function ModalCrearEditar({
                 placeholder="Detalles adicionales del producto..."
               />
             </div>
-            
+
+            {/* Toggle venta fraccionada — solo si la unidad tiene conversiones */}
+            {conversionesFiltradas.length > 0 && <div className="md:col-span-3">
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    name="permite_fraccion"
+                    checked={formData.permite_fraccion}
+                    onChange={handleChange}
+                    className="sr-only"
+                  />
+                  <div className={`w-10 h-5 rounded-full transition-colors ${formData.permite_fraccion ? 'bg-blue-500' : 'bg-zinc-300 dark:bg-zinc-600'}`} />
+                  <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${formData.permite_fraccion ? 'translate-x-5' : ''}`} />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Venta fraccionada</p>
+                  <p className="text-xs text-zinc-400">Permite vender este producto en sub-unidades (arrobas, kilos, etc.)</p>
+                </div>
+              </label>
+            </div>}
+
+            {/* Panel de precios por sub-unidad */}
+            {formData.permite_fraccion && (
+              <div className="md:col-span-3 border border-zinc-200 dark:border-zinc-700 rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700">
+                  <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Sub-unidades habilitadas</p>
+                </div>
+                {conversionesFiltradas.length === 0 ? (
+                  <p className="px-4 py-3 text-xs text-zinc-400">No hay conversiones definidas. Ve a Catálogos → Conversiones.</p>
+                ) : (
+                  <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    {conversionesFiltradas.map(c => {
+                      const activa = !!fraccionPrecios[c.id_conversion];
+                      return (
+                        <div key={c.id_conversion} className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleFraccion(c.id_conversion)}
+                              className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${activa ? 'bg-blue-500 border-blue-500' : 'border-zinc-300 dark:border-zinc-600'}`}
+                            >
+                              {activa && (
+                                <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                </svg>
+                              )}
+                            </button>
+                            <div className="flex-1 min-w-0">
+                              <span className={`text-sm font-medium ${activa ? 'text-zinc-800 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500'}`}>
+                                {c.nombre}
+                              </span>
+                              <span className="ml-2 text-[10px] text-zinc-400">{c.abreviatura} · 1/{c.factor} unidades</span>
+                            </div>
+                            {activa && (
+                              <div className="flex items-center gap-2 shrink-0">
+                                <div className="text-right">
+                                  <p className="text-[10px] text-zinc-400 mb-0.5">Mayor</p>
+                                  <input
+                                    type="number" step="0.01" min="0" placeholder="0.00"
+                                    value={fraccionPrecios[c.id_conversion]?.precio_mayor ?? ''}
+                                    onChange={e => handleFraccionPrecio(c.id_conversion, 'precio_mayor', e.target.value)}
+                                    className="w-24 text-center py-1 px-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                                  />
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-[10px] text-zinc-400 mb-0.5">Menor</p>
+                                  <input
+                                    type="number" step="0.01" min="0" placeholder="0.00"
+                                    value={fraccionPrecios[c.id_conversion]?.precio_menor ?? ''}
+                                    onChange={e => handleFraccionPrecio(c.id_conversion, 'precio_menor', e.target.value)}
+                                    className="w-24 text-center py-1 px-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
           </form>
         </div>
 

@@ -38,16 +38,16 @@ const authMiddleware = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secreto');
-    const { id_usuario, rol, id_sucursal, id_sector } = decoded; // ✅ Cambiado id_persona → id_usuario, agregado id_sector
+    const { id_usuario, id_empresa, rol, id_sucursal } = decoded;
 
     const claves  = await getPermisosDeRol(rol);
     const ability = buildAbilityForPermisos(claves);
 
     req.user = {
-      id_usuario,  // ✅ Cambiado de id_persona
+      id_usuario,
+      id_empresa,
       rol,
       id_sucursal,
-      id_sector,   // ✅ Agregado
       permisos: claves,
     };
     req.ability = ability;

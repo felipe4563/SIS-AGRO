@@ -13,7 +13,20 @@
 node_modules/
 backend/node_modules/
 frontend/node_modules/
+frontend-admin/node_modules/
 backend/uploads/
+
+# ===============================
+#   Imágenes
+# ===============================
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.bmp
+*.ico
+*.tiff
 
 # ===============================
 #   Build y empaquetado

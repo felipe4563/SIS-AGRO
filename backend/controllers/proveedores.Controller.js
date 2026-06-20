@@ -1,11 +1,14 @@
 const db = require('../config/db');
 
 const listar = async (req, res) => {
+  const id_empresa = req.user.id_empresa;
   try {
     const [rows] = await db.promise().query(
-      `SELECT id_proveedor, empresa, nit, contacto, telefono, correo, direccion, activo 
-       FROM proveedor 
-       ORDER BY empresa ASC`
+      `SELECT id_proveedor, empresa, nit, contacto, telefono, correo, direccion, activo
+       FROM proveedor
+       WHERE id_empresa = ?
+       ORDER BY empresa ASC`,
+      [id_empresa]
     );
     return res.json(rows);
   } catch (err) {
@@ -14,8 +17,12 @@ const listar = async (req, res) => {
 };
 
 const obtener = async (req, res) => {
+  const id_empresa = req.user.id_empresa;
   try {
-    const [rows] = await db.promise().query('SELECT * FROM proveedor WHERE id_proveedor = ?', [req.params.id]);
+    const [rows] = await db.promise().query(
+      'SELECT * FROM proveedor WHERE id_proveedor = ? AND id_empresa = ?',
+      [req.params.id, id_empresa]
+    );
     if (rows.length === 0) return res.status(404).json({ error: 'Proveedor no encontrado' });
     return res.json(rows[0]);
   } catch (err) {
@@ -24,17 +31,19 @@ const obtener = async (req, res) => {
 };
 
 const crear = async (req, res) => {
+  const id_empresa = req.user.id_empresa;
   const { empresa, nit, contacto, telefono, correo, direccion } = req.body;
-  
+
   if (!empresa) {
     return res.status(400).json({ error: 'El nombre de la empresa es obligatorio' });
   }
 
   try {
     const [result] = await db.promise().query(
-      `INSERT INTO proveedor (empresa, nit, contacto, telefono, correo, direccion) 
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO proveedor (id_empresa, empresa, nit, contacto, telefono, correo, direccion)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
+        id_empresa,
         empresa.trim(),
         nit || null,
         contacto ? contacto.trim() : null,
@@ -55,6 +64,7 @@ const crear = async (req, res) => {
 
 const editar = async (req, res) => {
   const { id } = req.params;
+  const id_empresa = req.user.id_empresa;
   const { empresa, nit, contacto, telefono, correo, direccion } = req.body;
 
   if (!empresa) {
@@ -63,9 +73,9 @@ const editar = async (req, res) => {
 
   try {
     await db.promise().query(
-      `UPDATE proveedor SET 
-        empresa = ?, nit = ?, contacto = ?, telefono = ?, correo = ?, direccion = ? 
-       WHERE id_proveedor = ?`,
+      `UPDATE proveedor SET
+        empresa = ?, nit = ?, contacto = ?, telefono = ?, correo = ?, direccion = ?
+       WHERE id_proveedor = ? AND id_empresa = ?`,
       [
         empresa.trim(),
         nit || null,
@@ -73,7 +83,8 @@ const editar = async (req, res) => {
         telefono || null,
         correo || null,
         direccion || null,
-        id
+        id,
+        id_empresa
       ]
     );
 
@@ -88,8 +99,9 @@ const editar = async (req, res) => {
 
 const eliminar = async (req, res) => {
   const { id } = req.params;
+  const id_empresa = req.user.id_empresa;
   try {
-    await db.promise().query('UPDATE proveedor SET activo = 0 WHERE id_proveedor = ?', [id]);
+    await db.promise().query('UPDATE proveedor SET activo = 0 WHERE id_proveedor = ? AND id_empresa = ?', [id, id_empresa]);
     return res.json({ mensaje: 'Proveedor desactivado' });
   } catch (err) {
     return res.status(500).json({ error: 'Error al desactivar proveedor' });
@@ -99,8 +111,12 @@ const eliminar = async (req, res) => {
 const toggleActivo = async (req, res) => {
   const { id } = req.params;
   const { activo } = req.body;
+  const id_empresa = req.user.id_empresa;
   try {
-    await db.promise().query('UPDATE proveedor SET activo = ? WHERE id_proveedor = ?', [activo ? 1 : 0, id]);
+    await db.promise().query(
+      'UPDATE proveedor SET activo = ? WHERE id_proveedor = ? AND id_empresa = ?',
+      [activo ? 1 : 0, id, id_empresa]
+    );
     return res.json({ mensaje: 'Estado actualizado' });
   } catch (err) {
     return res.status(500).json({ error: 'Error al cambiar estado' });

@@ -29,8 +29,10 @@ router.get('/', checkPermission('ver', 'productos'), ctrl.listarProductos);
 router.post('/', checkPermission('crear', 'productos'), ctrl.crearProducto);
 router.put('/:id', checkPermission('editar', 'productos'), ctrl.editarProducto);
 router.delete('/:id', checkPermission('eliminar', 'productos'), ctrl.eliminarProducto);
-router.patch('/:id/activo',  checkPermission('activar',          'productos'), ctrl.toggleActivoProducto);
-router.patch('/:id/imagen',  checkPermission('gestionar_imagen', 'productos'), upload.single('imagen'), ctrl.subirImagenProducto);
-router.delete('/:id/imagen', checkPermission('gestionar_imagen', 'productos'), ctrl.eliminarImagenProducto);
+router.patch('/:id/activo',      checkPermission('activar',          'productos'), ctrl.toggleActivoProducto);
+router.patch('/:id/imagen',      checkPermission('gestionar_imagen', 'productos'), upload.single('imagen'), ctrl.subirImagenProducto);
+router.delete('/:id/imagen',     checkPermission('gestionar_imagen', 'productos'), ctrl.eliminarImagenProducto);
+router.get('/:id/fracciones',    checkPermission('editar',           'productos'), ctrl.listarFraccionesProducto);
+router.put('/:id/fracciones',    checkPermission('editar',           'productos'), ctrl.guardarFracciones);
 
 module.exports = router;

@@ -2,6 +2,7 @@ const db = require('../config/db');
 const { invalidarCacheRol } = require('../middlewares/authMiddleware');
 
 const listarRoles = (req, res) => {
+  const id_empresa = req.user.id_empresa;
   const sql = `
     SELECT
       r.id_rol,
@@ -9,13 +10,14 @@ const listarRoles = (req, res) => {
       COUNT(DISTINCT rp.id_permiso) AS total_permisos,
       COUNT(DISTINCT u.id_usuario)  AS total_usuarios
     FROM rol r
-    LEFT JOIN rol_permiso rp ON rp.id_rol     = r.id_rol
-    LEFT JOIN usuario    u  ON u.id_rol       = r.id_rol
+    LEFT JOIN rol_permiso rp ON rp.id_rol = r.id_rol
+    LEFT JOIN usuario    u  ON u.id_rol   = r.id_rol AND u.id_empresa = ?
+    WHERE r.id_empresa = ?
     GROUP BY r.id_rol, r.nombre
     ORDER BY r.id_rol ASC
   `;
 
-  db.query(sql, (err, results) => {
+  db.query(sql, [id_empresa, id_empresa], (err, results) => {
     if (err) {
       console.error('[listarRoles]', err);
       return res.status(500).json({ error: 'Error al obtener roles' });
@@ -81,16 +83,17 @@ const obtenerRol = (req, res) => {
 };
 
 const crearRol = (req, res) => {
+  const id_empresa = req.user.id_empresa;
   const { nombre, permisos = [] } = req.body;
 
   if (!nombre?.trim()) {
     return res.status(400).json({ error: 'El nombre del rol es requerido' });
   }
 
-  // Verificar que no exista un rol con el mismo nombre
+  // Verificar que no exista un rol con el mismo nombre en esta empresa
   db.query(
-    'SELECT id_rol FROM rol WHERE nombre = ?',
-    [nombre.trim().toUpperCase()],
+    'SELECT id_rol FROM rol WHERE nombre = ? AND id_empresa = ?',
+    [nombre.trim().toUpperCase(), id_empresa],
     (err, existe) => {
       if (err) {
         console.error('[crearRol] check nombre:', err);
@@ -102,8 +105,8 @@ const crearRol = (req, res) => {
 
       // Insertar el rol
       db.query(
-        'INSERT INTO rol (nombre) VALUES (?)',
-        [nombre.trim().toUpperCase()],
+        'INSERT INTO rol (id_empresa, nombre) VALUES (?, ?)',
+        [id_empresa, nombre.trim().toUpperCase()],
         (errInsert, result) => {
           if (errInsert) {
             console.error('[crearRol] insert:', errInsert);

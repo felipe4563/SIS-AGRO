@@ -2,6 +2,7 @@ const db = require('../config/db');
 const bcrypt = require('bcrypt');
 
 const listarUsuarios = (req, res) => {
+  const id_empresa = req.user.id_empresa;
   const sql = `
     SELECT
       u.id_usuario,
@@ -18,10 +19,11 @@ const listarUsuarios = (req, res) => {
     FROM usuario u
     LEFT JOIN rol r ON r.id_rol = u.id_rol
     LEFT JOIN sucursal s ON s.id_sucursal = u.id_sucursal
+    WHERE u.id_empresa = ?
     ORDER BY u.id_usuario DESC
   `;
 
-  db.query(sql, (err, rows) => {
+  db.query(sql, [id_empresa], (err, rows) => {
     if (err) {
       console.error('[listarUsuarios]', err);
       return res.status(500).json({ error: 'Error al obtener usuarios' });
@@ -36,6 +38,7 @@ function normalizarCorreo(correo) {
 }
 
 const crearUsuario = async (req, res) => {
+  const id_empresa = req.user.id_empresa;
   const {
     ci,
     nombre,
@@ -68,29 +71,57 @@ const crearUsuario = async (req, res) => {
   try {
     const hash = await bcrypt.hash(String(contrasena), 10);
 
-    // Unicidad CI
-    const [exCI] = await db.promise().query('SELECT id_usuario FROM usuario WHERE ci = ? LIMIT 1', [ciTxt]);
+    // Unicidad CI dentro de la empresa
+    const [exCI] = await db.promise().query(
+      'SELECT id_usuario FROM usuario WHERE ci = ? AND id_empresa = ? LIMIT 1',
+      [ciTxt, id_empresa]
+    );
     if (exCI.length > 0) {
       return res.status(409).json({ error: 'Ya existe un usuario con ese CI' });
     }
 
     // Unicidad correo (si viene)
     if (correoTxt) {
-      const [exCorreo] = await db.promise().query('SELECT id_usuario FROM usuario WHERE correo = ? LIMIT 1', [correoTxt]);
+      const [exCorreo] = await db.promise().query(
+        'SELECT id_usuario FROM usuario WHERE correo = ? AND id_empresa = ? LIMIT 1',
+        [correoTxt, id_empresa]
+      );
       if (exCorreo.length > 0) {
         return res.status(409).json({ error: 'Ya existe un usuario con ese correo' });
       }
     }
 
-    // Validar rol
+    // Verificar límite del plan
+    const [planRows] = await db.promise().query(
+      `SELECT p.max_usuarios
+       FROM suscripcion s JOIN plan p ON p.id_plan = s.id_plan
+       WHERE s.id_empresa = ? AND s.estado IN ('ACTIVA','PRUEBA') LIMIT 1`,
+      [id_empresa]
+    );
+    if (planRows.length > 0 && planRows[0].max_usuarios > 0) {
+      const [countRows] = await db.promise().query(
+        'SELECT COUNT(*) AS total FROM usuario WHERE id_empresa = ?',
+        [id_empresa]
+      );
+      if (countRows[0].total >= planRows[0].max_usuarios) {
+        return res.status(403).json({
+          error: `Tu plan permite máximo ${planRows[0].max_usuarios} usuario(s). Actualiza tu plan para agregar más.`,
+        });
+      }
+    }
+
+    // Validar rol (que pertenezca a la empresa o sea global)
     const [rolRows] = await db.promise().query('SELECT id_rol FROM rol WHERE id_rol = ? LIMIT 1', [idRolNum]);
     if (rolRows.length === 0) {
       return res.status(404).json({ error: 'Rol no encontrado' });
     }
 
-    // Validar sucursal (si viene)
+    // Validar sucursal (que pertenezca a la empresa)
     if (Number.isFinite(idSucursalNum)) {
-      const [sRows] = await db.promise().query('SELECT id_sucursal FROM sucursal WHERE id_sucursal = ? LIMIT 1', [idSucursalNum]);
+      const [sRows] = await db.promise().query(
+        'SELECT id_sucursal FROM sucursal WHERE id_sucursal = ? AND id_empresa = ? LIMIT 1',
+        [idSucursalNum, id_empresa]
+      );
       if (sRows.length === 0) {
         return res.status(404).json({ error: 'Sucursal no encontrada' });
       }
@@ -98,9 +129,9 @@ const crearUsuario = async (req, res) => {
 
     const [result] = await db.promise().query(
       `INSERT INTO usuario
-        (id_rol, id_sucursal, ci, nombre, apellido, celular, correo, contrasena, activo)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [idRolNum, Number.isFinite(idSucursalNum) ? idSucursalNum : null, ciTxt, nombreTxt, apellidoTxt, celularTxt, correoTxt, hash, activoNum]
+        (id_empresa, id_rol, id_sucursal, ci, nombre, apellido, celular, correo, contrasena, activo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id_empresa, idRolNum, Number.isFinite(idSucursalNum) ? idSucursalNum : null, ciTxt, nombreTxt, apellidoTxt, celularTxt, correoTxt, hash, activoNum]
     );
 
     return res.status(201).json({
@@ -116,6 +147,7 @@ const crearUsuario = async (req, res) => {
 const editarUsuario = async (req, res) => {
   const { id } = req.params;
   const idUsuarioNum = Number(id);
+  const id_empresa = req.user.id_empresa;
   if (!Number.isFinite(idUsuarioNum) || idUsuarioNum <= 0) {
     return res.status(400).json({ error: 'ID inválido' });
   }
@@ -143,25 +175,28 @@ const editarUsuario = async (req, res) => {
   const activoNum = activo === undefined ? undefined : (activo === 0 || activo === '0' ? 0 : 1);
 
   try {
-    const [existe] = await db.promise().query('SELECT id_usuario FROM usuario WHERE id_usuario = ? LIMIT 1', [idUsuarioNum]);
+    const [existe] = await db.promise().query(
+      'SELECT id_usuario FROM usuario WHERE id_usuario = ? AND id_empresa = ? LIMIT 1',
+      [idUsuarioNum, id_empresa]
+    );
     if (existe.length === 0) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
-    // Validar CI único (si se manda)
+    // Validar CI único dentro de la empresa
     if (ciTxt) {
       const [dupCI] = await db.promise().query(
-        'SELECT id_usuario FROM usuario WHERE ci = ? AND id_usuario != ? LIMIT 1',
-        [ciTxt, idUsuarioNum]
+        'SELECT id_usuario FROM usuario WHERE ci = ? AND id_usuario != ? AND id_empresa = ? LIMIT 1',
+        [ciTxt, idUsuarioNum, id_empresa]
       );
       if (dupCI.length > 0) return res.status(409).json({ error: 'Ya existe otro usuario con ese CI' });
     }
 
-    // Validar correo único (si se manda)
+    // Validar correo único dentro de la empresa
     if (correoTxt !== undefined && correoTxt) {
       const [dupCorreo] = await db.promise().query(
-        'SELECT id_usuario FROM usuario WHERE correo = ? AND id_usuario != ? LIMIT 1',
-        [correoTxt, idUsuarioNum]
+        'SELECT id_usuario FROM usuario WHERE correo = ? AND id_usuario != ? AND id_empresa = ? LIMIT 1',
+        [correoTxt, idUsuarioNum, id_empresa]
       );
       if (dupCorreo.length > 0) return res.status(409).json({ error: 'Ya existe otro usuario con ese correo' });
     }
@@ -173,10 +208,13 @@ const editarUsuario = async (req, res) => {
       if (rolRows.length === 0) return res.status(404).json({ error: 'Rol no encontrado' });
     }
 
-    // Validar sucursal (si se manda)
+    // Validar sucursal (que pertenezca a la empresa)
     if (idSucursalNum !== undefined && idSucursalNum !== null) {
       if (!Number.isFinite(idSucursalNum) || idSucursalNum <= 0) return res.status(400).json({ error: '"id_sucursal" inválido' });
-      const [sRows] = await db.promise().query('SELECT id_sucursal FROM sucursal WHERE id_sucursal = ? LIMIT 1', [idSucursalNum]);
+      const [sRows] = await db.promise().query(
+        'SELECT id_sucursal FROM sucursal WHERE id_sucursal = ? AND id_empresa = ? LIMIT 1',
+        [idSucursalNum, id_empresa]
+      );
       if (sRows.length === 0) return res.status(404).json({ error: 'Sucursal no encontrada' });
     }
 
@@ -203,7 +241,8 @@ const editarUsuario = async (req, res) => {
     }
 
     values.push(idUsuarioNum);
-    await db.promise().query(`UPDATE usuario SET ${fields.join(', ')} WHERE id_usuario = ?`, values);
+    values.push(id_empresa);
+    await db.promise().query(`UPDATE usuario SET ${fields.join(', ')} WHERE id_usuario = ? AND id_empresa = ?`, values);
 
     return res.json({ mensaje: 'Usuario actualizado correctamente' });
   } catch (err) {
@@ -215,16 +254,19 @@ const editarUsuario = async (req, res) => {
 const eliminarUsuario = async (req, res) => {
   const { id } = req.params;
   const idUsuarioNum = Number(id);
+  const id_empresa = req.user.id_empresa;
   if (!Number.isFinite(idUsuarioNum) || idUsuarioNum <= 0) {
     return res.status(400).json({ error: 'ID inválido' });
   }
 
   try {
-    const [rows] = await db.promise().query('SELECT id_usuario, activo FROM usuario WHERE id_usuario = ? LIMIT 1', [idUsuarioNum]);
+    const [rows] = await db.promise().query(
+      'SELECT id_usuario, activo FROM usuario WHERE id_usuario = ? AND id_empresa = ? LIMIT 1',
+      [idUsuarioNum, id_empresa]
+    );
     if (rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
 
-    // Baja lógica: activo=0
-    await db.promise().query('UPDATE usuario SET activo = 0 WHERE id_usuario = ?', [idUsuarioNum]);
+    await db.promise().query('UPDATE usuario SET activo = 0 WHERE id_usuario = ? AND id_empresa = ?', [idUsuarioNum, id_empresa]);
     return res.json({ mensaje: 'Usuario desactivado correctamente' });
   } catch (err) {
     console.error('[eliminarUsuario]', err);
@@ -235,8 +277,9 @@ const eliminarUsuario = async (req, res) => {
 const toggleActivoUsuario = async (req, res) => {
   const { id } = req.params;
   const { activo } = req.body ?? {};
-
   const idUsuarioNum = Number(id);
+  const id_empresa = req.user.id_empresa;
+
   if (!Number.isFinite(idUsuarioNum) || idUsuarioNum <= 0) {
     return res.status(400).json({ error: 'ID inválido' });
   }
@@ -247,10 +290,13 @@ const toggleActivoUsuario = async (req, res) => {
   }
 
   try {
-    const [rows] = await db.promise().query('SELECT id_usuario FROM usuario WHERE id_usuario = ? LIMIT 1', [idUsuarioNum]);
+    const [rows] = await db.promise().query(
+      'SELECT id_usuario FROM usuario WHERE id_usuario = ? AND id_empresa = ? LIMIT 1',
+      [idUsuarioNum, id_empresa]
+    );
     if (rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
 
-    await db.promise().query('UPDATE usuario SET activo = ? WHERE id_usuario = ?', [activoNum, idUsuarioNum]);
+    await db.promise().query('UPDATE usuario SET activo = ? WHERE id_usuario = ? AND id_empresa = ?', [activoNum, idUsuarioNum, id_empresa]);
     return res.json({ mensaje: 'Estado actualizado correctamente', activo: activoNum });
   } catch (err) {
     console.error('[toggleActivoUsuario]', err);

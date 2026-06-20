@@ -5,6 +5,7 @@ const API_BASE = import.meta.env.VITE_API_URL.replace('/api', '');
 export default function TablaProductos({
   productos,
   cargando,
+  hayFiltros,
   onEditar,
   onEliminar,
   onToggleActivo,
@@ -27,8 +28,17 @@ export default function TablaProductos({
   if (!productos || productos.length === 0) {
     return (
       <div className="p-8 text-center text-zinc-500 dark:text-zinc-400 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-        <p className="text-lg">No hay productos registrados.</p>
-        <p className="text-sm mt-1">Haz clic en "Nuevo Producto" para comenzar.</p>
+        {hayFiltros ? (
+          <>
+            <p className="text-lg">Sin resultados</p>
+            <p className="text-sm mt-1">No hay productos que coincidan con los filtros aplicados.</p>
+          </>
+        ) : (
+          <>
+            <p className="text-lg">No hay productos registrados.</p>
+            <p className="text-sm mt-1">Haz clic en "Nuevo Producto" para comenzar.</p>
+          </>
+        )}
       </div>
     );
   }
@@ -65,9 +75,6 @@ export default function TablaProductos({
                 <td className="px-4 py-3">
                   <p className="text-sm font-semibold text-zinc-900 dark:text-white">
                     {p.nombre}
-                  </p>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                    Cod: {p.codigo_barras || 'N/A'}
                   </p>
                 </td>
                 <td className="px-4 py-3 hidden md:table-cell text-xs text-zinc-600 dark:text-zinc-400">

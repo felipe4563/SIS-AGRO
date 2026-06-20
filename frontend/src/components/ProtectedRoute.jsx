@@ -26,12 +26,20 @@ export default function ProtectedRoute({ children, action, subject, anyPermissio
   const location           = useLocation();
 
   // ── 1. No autenticado → redirigir al login ────────────────────────────
-  // Guardamos la ruta actual para redirigir de vuelta tras el login
   if (!usuario) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // ── 2. anyPermission (OR) → acceso si tiene al menos uno ─────────────
+  // ── 2. Setup pendiente → redirigir al wizard de onboarding ───────────
+  if (!usuario.setup_completado && location.pathname !== '/onboarding') {
+    return <Navigate to="/onboarding" replace />;
+  }
+  // ── 2b. Setup ya completo → no dejar entrar al onboarding ────────────
+  if (usuario.setup_completado && location.pathname === '/onboarding') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // ── 3. anyPermission (OR) → acceso si tiene al menos uno ─────────────
   if (anyPermission) {
     const tieneAlguno = anyPermission.some(p => puede(p.action, p.subject));
     if (!tieneAlguno) {
@@ -40,7 +48,7 @@ export default function ProtectedRoute({ children, action, subject, anyPermissio
     return children;
   }
 
-  // ── 3. Sin permiso específico → página de acceso denegado ─────────────
+  // ── 4. Sin permiso específico → página de acceso denegado ─────────────
   if (action && subject && noPuede(action, subject)) {
     return <Navigate to="/sin-permiso" replace />;
   }
