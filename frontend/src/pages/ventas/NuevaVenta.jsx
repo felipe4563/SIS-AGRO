@@ -134,6 +134,109 @@ const IconCredito = () => (
   </svg>
 );
 
+/* ── Modal QR CodePay ───────────────────────────────────────────────── */
+function ModalQR({ qrData, onCompletado, onCancelar }) {
+  const [estado, setEstado] = useState('pending'); // pending | completed | failed
+  const intervalRef = useRef(null);
+
+  useEffect(() => {
+    if (!qrData?.tx_id) return;
+    intervalRef.current = setInterval(async () => {
+      try {
+        const res = await ventaService.estadoPagoQR(qrData.tx_id);
+        if (res.data.status === 'completed') {
+          clearInterval(intervalRef.current);
+          setEstado('completed');
+          setTimeout(() => onCompletado(), 1200);
+        } else if (res.data.status === 'failed') {
+          clearInterval(intervalRef.current);
+          setEstado('failed');
+        }
+      } catch {
+        // silenciar errores de polling
+      }
+    }, 3000);
+    return () => clearInterval(intervalRef.current);
+  }, [qrData?.tx_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!qrData) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-xs border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+        {/* Header */}
+        <div className="px-5 pt-5 pb-3 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">CodePay QR</p>
+            <p className="text-lg font-black text-zinc-900 dark:text-white mt-0.5">
+              Bs {parseFloat(qrData.amount).toFixed(2)}
+            </p>
+            {qrData.commission_amount > 0 && (
+              <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                Neto: Bs {parseFloat(qrData.net_amount).toFixed(2)} + comisión: Bs {parseFloat(qrData.commission_amount).toFixed(2)}
+              </p>
+            )}
+          </div>
+          {estado === 'completed' && (
+            <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center">
+              <svg className="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+              </svg>
+            </div>
+          )}
+        </div>
+
+        {/* QR image */}
+        <div className="px-5 pb-4 flex justify-center">
+          <div className="relative w-48 h-48 rounded-xl overflow-hidden border-2 border-zinc-100 dark:border-zinc-800">
+            <img src={qrData.qr_code} alt="QR de pago" className="w-full h-full object-contain" />
+            {estado === 'completed' && (
+              <div className="absolute inset-0 bg-emerald-500/90 flex items-center justify-center rounded-xl">
+                <svg className="w-16 h-16 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+                </svg>
+              </div>
+            )}
+            {estado === 'failed' && (
+              <div className="absolute inset-0 bg-red-500/90 flex items-center justify-center rounded-xl">
+                <svg className="w-16 h-16 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
+                </svg>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Status */}
+        <div className="px-5 pb-2 text-center">
+          {estado === 'pending' && (
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 flex items-center justify-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse"/>
+              Esperando pago...
+            </p>
+          )}
+          {estado === 'completed' && (
+            <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">¡Pago confirmado!</p>
+          )}
+          {estado === 'failed' && (
+            <p className="text-sm font-bold text-red-500">El pago falló o expiró</p>
+          )}
+        </div>
+
+        {/* Actions */}
+        {estado !== 'completed' && (
+          <div className="px-5 pb-5 pt-2">
+            <button onClick={onCancelar}
+              className="w-full py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm font-semibold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+              Cancelar pago
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Componente principal ───────────────────────────────────────────── */
 export default function NuevaVenta() {
   const navigate       = useNavigate();
@@ -151,6 +254,7 @@ export default function NuevaVenta() {
   const [ventaCompletadaId, setVentaCompletadaId] = useState(null);
   const [tabMovil, setTabMovil] = useState('productos');
   const [modalNuevoCliente, setModalNuevoCliente] = useState(false);
+  const [modalQR, setModalQR] = useState(null); // { qr_code, tx_id, amount, net_amount, commission_amount, id_venta }
 
   const [busqueda, setBusqueda] = useState('');
   const busquedaRef = useRef(null);
@@ -405,7 +509,9 @@ export default function NuevaVenta() {
       const payload = buildPayload();
       if (metodoPago === 'QR') {
         const res = await ventaService.iniciarPagoQR(payload);
-        window.location.replace(res.data.checkout_url);
+        setModalQR({ ...res.data });
+        setGuardando(false);
+        return;
       } else {
         const res = await ventaService.crear(payload);
         mostrarToast('ok', 'Venta registrada correctamente');
@@ -929,6 +1035,22 @@ export default function NuevaVenta() {
         <ModalNuevoCliente
           onClose={() => setModalNuevoCliente(false)}
           onCreado={handleClienteCreado}
+        />
+      )}
+
+      {modalQR && (
+        <ModalQR
+          qrData={modalQR}
+          onCompletado={() => {
+            setModalQR(null);
+            mostrarToast('ok', 'Pago confirmado correctamente');
+            setVentaCompletadaId(modalQR.id_venta);
+            setCarrito([]);
+            setMontoPagado('');
+            setNroFactura('');
+            setDescuentoPct('');
+          }}
+          onCancelar={() => setModalQR(null)}
         />
       )}
 
