@@ -18,11 +18,11 @@ echo "==> Construyendo frontend admin..."
 cd frontend-admin && npm install && npm run build && cd ..
 
 echo "==> Reiniciando servicio..."
-pm2 reload api_agro
+pm2 reload api-agro
 
 echo "==> Recargando Nginx..."
 sudo nginx -t && sudo systemctl reload nginx
 
 echo ""
 echo "Despliegue completado"
-pm2 status api_agro
+pm2 status api-agro
