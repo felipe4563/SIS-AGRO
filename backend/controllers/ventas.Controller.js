@@ -1,5 +1,5 @@
 const db = require('../config/db');
-const { signCheckoutToken, generarOrderId, buildCheckoutUrl } = require('../services/codepay.service');
+const { generarOrderId, generarQR, consultarEstadoQR } = require('../services/codepay.service');
 
 // ── Helper privado: lógica FIFO compartida por crear e iniciarPagoQR ──────
 async function _insertarVentaFIFO(connection, {
@@ -242,8 +242,8 @@ const crear = async (req, res) => {
   }
 };
 
-// Iniciar pago QR mediante CodePay
-// Crea la venta como PENDIENTE (stock ya descontado), genera el JWT de checkout y devuelve la URL.
+// Iniciar pago QR mediante CodePay (API directa — QR embebido en la app)
+// Crea la venta como PENDIENTE, llama a CodePay API y devuelve el QR como data URI.
 const iniciarPagoQR = async (req, res) => {
   const {
     id_cliente, nro_factura, tipo_venta, subtotal,
@@ -262,7 +262,6 @@ const iniciarPagoQR = async (req, res) => {
   const id_usuario  = req.user.id_usuario;
   const id_sucursal = req.user.id_sucursal;
 
-  // Verificar que haya un turno de caja abierto en la sucursal
   const [turnoAbiertoQR] = await db.promise().query(
     `SELECT id_apertura FROM apertura_cierre_caja WHERE id_sucursal = ? AND estado = 'ABIERTA' LIMIT 1`,
     [id_sucursal]
@@ -270,8 +269,8 @@ const iniciarPagoQR = async (req, res) => {
   if (turnoAbiertoQR.length === 0) {
     return res.status(409).json({ error: 'No hay caja abierta. Abre un turno en el módulo de Caja antes de registrar ventas.' });
   }
-  const order_id    = generarOrderId();
 
+  const order_id = generarOrderId();
   const connection = await db.promise().getConnection();
   try {
     await connection.beginTransaction();
@@ -280,7 +279,7 @@ const iniciarPagoQR = async (req, res) => {
       id_sucursal, id_usuario,
       id_cliente, nro_factura, tipo_venta, subtotal,
       descuento_total, total,
-      monto_pagado: parseFloat(total), // se actualizará al confirmar el pago
+      monto_pagado: parseFloat(total),
       cambio: 0,
       metodo_pago: 'QR',
       observaciones, detalles,
@@ -290,47 +289,33 @@ const iniciarPagoQR = async (req, res) => {
 
     await connection.commit();
 
-    // Obtener nombres de productos para el payload de CodePay
-    const idProductos = [...new Set(detalles.map(d => d.id_producto))];
-    const placeholders = idProductos.map(() => '?').join(',');
-    const [productos] = await db.promise().query(
-      `SELECT id_producto, nombre FROM producto WHERE id_producto IN (${placeholders})`,
-      idProductos
-    );
-    const nombresProd = Object.fromEntries(productos.map(p => [p.id_producto, p]));
-
-    // Construir items para CodePay (unit_price = subtotal / cantidad → garantiza que Σ = total)
-    const items = detalles.map(d => {
-      const prod        = nombresProd[d.id_producto] || {};
-      const cantidad    = parseFloat(d.cantidad);
-      const subtotalD   = parseFloat(d.subtotal);
-      const unitPrice   = cantidad > 0 ? Math.round((subtotalD / cantidad) * 100) / 100 : 0;
-      const item = {
-        name:       (prod.nombre || `Producto ${d.id_producto}`).slice(0, 50),
-        quantity:   cantidad,
-        unit_price: unitPrice,
-      };
-      return item;
-    });
-
-    const baseUrl = (process.env.BASE_URL || 'http://localhost:5173').trim();
-
+    // Llamar a CodePay API directa — sin items ni redirects, sin pantalla de CodePay
     const payload = {
-      app_key:          process.env.CODEPAY_PUBLIC_KEY,
+      app_key:     process.env.CODEPAY_PUBLIC_KEY,
       order_id,
-      amount:           parseFloat(total),
-      currency:         'BOB',
-      description:      'Compra SIS AGRO',
-      items,
-      redirect_success: `${baseUrl}/ventas/${id_venta}/ticket`,
-      redirect_failure: `${baseUrl}/ventas/nueva?qr_failed=1&vid=${id_venta}`,
-      expires_at:       new Date(Date.now() + 30 * 60_000).toISOString(),
+      amount:      parseFloat(total),
+      currency:    'BOB',
+      description: 'SIS AGRO',
+      expires_at:  new Date(Date.now() + 30 * 60_000).toISOString(),
     };
 
-    const token       = signCheckoutToken(payload, process.env.CODEPAY_SECRET_KEY);
-    const checkout_url = buildCheckoutUrl(token);
+    const qrData = await generarQR(payload);
+    // qrData: { qr_code, tx_id, amount, net_amount, commission_amount, ... }
 
-    return res.status(201).json({ id_venta, checkout_url });
+    // Guardar el tx_id para poder hacer polling luego
+    await db.promise().query(
+      'UPDATE venta SET codepay_tx_id = ? WHERE id_venta = ?',
+      [qrData.tx_id, id_venta]
+    );
+
+    return res.status(201).json({
+      id_venta,
+      qr_code:           qrData.qr_code,
+      tx_id:             qrData.tx_id,
+      amount:            qrData.amount,
+      net_amount:        qrData.net_amount,
+      commission_amount: qrData.commission_amount,
+    });
 
   } catch (err) {
     await connection.rollback();
@@ -338,6 +323,18 @@ const iniciarPagoQR = async (req, res) => {
     return res.status(500).json({ error: err.message || 'Error interno al iniciar el pago QR' });
   } finally {
     connection.release();
+  }
+};
+
+// Consultar estado del pago QR por tx_id (polling desde el frontend)
+const estadoPagoQR = async (req, res) => {
+  const { tx_id } = req.params;
+  try {
+    const data = await consultarEstadoQR(tx_id);
+    return res.json(data);
+  } catch (err) {
+    console.error('Error al consultar estado QR:', err);
+    return res.status(502).json({ error: 'No se pudo consultar el estado del pago.' });
   }
 };
 
@@ -499,6 +496,7 @@ module.exports = {
   obtener,
   crear,
   iniciarPagoQR,
+  estadoPagoQR,
   anular,
   listarProductosPOS,
 };

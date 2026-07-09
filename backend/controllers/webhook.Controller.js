@@ -35,10 +35,9 @@ const confirmarPago = async (req, res) => {
     return res.json({ success: true });
   }
 
-  const { order_id, tx_id, voucher_id, amount } = data;
+  const { order_id, tx_id, voucher_id, amount, net_amount } = data;
 
   try {
-    // Buscar la venta por codepay_order_id
     const [rows] = await db.promise().query(
       'SELECT id_venta, estado, total, codepay_tx_id FROM venta WHERE codepay_order_id = ?',
       [order_id]
@@ -46,13 +45,13 @@ const confirmarPago = async (req, res) => {
 
     if (rows.length === 0) {
       console.error(`[webhook] Venta no encontrada para order_id: ${order_id}`);
-      return res.json({ success: true }); // ACK igual para no dejar CodePay esperando
+      return res.json({ success: true });
     }
 
     const venta = rows[0];
 
-    // Idempotencia: ya fue procesado este pago
-    if (venta.codepay_tx_id) {
+    // Idempotencia: ya fue procesado
+    if (venta.codepay_tx_id && venta.estado === 'COMPLETADA') {
       console.log(`[webhook] Pago ya procesado para order_id: ${order_id}`);
       return res.json({ success: true });
     }
@@ -62,19 +61,21 @@ const confirmarPago = async (req, res) => {
       return res.json({ success: true });
     }
 
-    // Marcar venta como COMPLETADA con los datos del pago
+    // monto_pagado = net_amount (lo que recibe el comercio) o amount si no viene desglosado
+    const montoPagado = net_amount ? parseFloat(net_amount) : parseFloat(amount);
+
     await db.promise().query(
       `UPDATE venta
-         SET estado = 'COMPLETADA',
-             codepay_tx_id   = ?,
+         SET estado         = 'COMPLETADA',
+             codepay_tx_id  = ?,
              codepay_voucher = ?,
-             monto_pagado    = ?,
-             cambio          = 0
+             monto_pagado   = ?,
+             cambio         = 0
        WHERE id_venta = ?`,
-      [tx_id, voucher_id || null, parseFloat(amount), venta.id_venta]
+      [tx_id, voucher_id || null, montoPagado, venta.id_venta]
     );
 
-    console.log(`[webhook] Pago confirmado: venta #${venta.id_venta} | tx_id: ${tx_id} | voucher: ${voucher_id}`);
+    console.log(`[webhook] Pago confirmado: venta #${venta.id_venta} | tx_id: ${tx_id} | neto: ${montoPagado}`);
     return res.json({ success: true });
 
   } catch (err) {

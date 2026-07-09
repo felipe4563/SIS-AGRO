@@ -1,9 +1,5 @@
 const { createHmac } = require('crypto');
 
-/**
- * Firma un payload como JWT con HMAC-SHA256.
- * Se usa para generar el token de checkout que se envía a CodePay.
- */
 function signCheckoutToken(payload, secretKey) {
   const header = { alg: 'HS256', typ: 'JWT' };
   const h   = Buffer.from(JSON.stringify(header)).toString('base64url');
@@ -16,7 +12,7 @@ function signCheckoutToken(payload, secretKey) {
 
 /**
  * Verifica la firma X-Codepay-Signature del webhook.
- * Formato del header: t={timestamp},v1={hmac_hex}
+ * Formato: t={timestamp},v1={hmac_hex}
  */
 function verifyWebhookSignature(header, rawBody, secret) {
   try {
@@ -37,22 +33,51 @@ function verifyWebhookSignature(header, rawBody, secret) {
   }
 }
 
-/**
- * Genera un order_id único para CodePay.
- * Reglas: max 25 chars, solo letras/números/guión_bajo
- */
+/** Genera un order_id único: max 25 chars, solo letras/números/guión_bajo */
 function generarOrderId() {
-  // Ej: VTA_pf7b9og0_abc → 17 chars
   return `VTA_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`;
 }
 
 /**
- * Construye la URL de checkout de CodePay con el JWT firmado.
+ * Llama a la API directa de CodePay para obtener un QR.
+ * Devuelve { qr_code, tx_id, amount, net_amount, commission_amount }.
  */
-function buildCheckoutUrl(token) {
-  const base    = process.env.CODEPAY_GATEWAY_URL || 'https://pay.codepay.bo';
-  const appKey  = process.env.CODEPAY_PUBLIC_KEY;
-  return `${base}/checkout/${token}?lang=es&app_key=${appKey}`;
+async function generarQR(payload) {
+  const apiUrl    = process.env.CODEPAY_API_URL || 'https://payapi.codewave.com.bo/api';
+  const secretKey = process.env.CODEPAY_SECRET_KEY;
+  const publicKey = process.env.CODEPAY_PUBLIC_KEY;
+
+  const token = signCheckoutToken(payload, secretKey);
+
+  const res = await fetch(`${apiUrl}/v1/payments/qr`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ token, pk: publicKey }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`CodePay API error ${res.status}: ${text}`);
+  }
+
+  return res.json();
 }
 
-module.exports = { signCheckoutToken, verifyWebhookSignature, generarOrderId, buildCheckoutUrl };
+/**
+ * Consulta el estado de un pago por tx_id.
+ * Devuelve { status, tx_id, order_id } — status: pending | completed | failed
+ */
+async function consultarEstadoQR(tx_id) {
+  const apiUrl = process.env.CODEPAY_API_URL || 'https://payapi.codewave.com.bo/api';
+
+  const res = await fetch(`${apiUrl}/checkout/status/${tx_id}`);
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`CodePay status error ${res.status}: ${text}`);
+  }
+
+  return res.json();
+}
+
+module.exports = { signCheckoutToken, verifyWebhookSignature, generarOrderId, generarQR, consultarEstadoQR };
