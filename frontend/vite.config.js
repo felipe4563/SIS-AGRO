@@ -109,4 +109,8 @@ export default defineConfig({
       'atm-zoo-measurements-newspapers.trycloudflare.com',
     ],
   },
+
+  test: {
+    environment: 'jsdom',
+  },
 });
