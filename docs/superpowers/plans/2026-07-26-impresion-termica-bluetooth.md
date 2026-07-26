@@ -1204,13 +1204,16 @@ Esta tarea no es código — es la validación final con la impresora física, i
   3. Hacer clic en "Imprimir térmica (BT)", elegir el puerto COM de la impresora en el selector.
   4. Confirmar que el ticket sale impreso con: logo (o nombre en negrita si no hay logo), datos de la venta, detalle de productos, totales, y que el papel se corta al final.
   5. Repetir el clic una segunda vez y confirmar que **no** vuelve a pedir el puerto (permiso recordado por el navegador).
+  6. Imprimir un ticket con muchos productos (ticket largo) y confirmar que **no se trunca al final** — `webSerial.js` libera el lock y cierra el puerto justo después de que `write()` resuelve, lo cual solo garantiza que los bytes entraron al buffer de escritura, no que ya se transmitieron por el enlace Bluetooth SPP (más lento que USB); esto solo se puede detectar con hardware real.
+  7. Probar un producto cuyo nombre tenga una comilla tipográfica (" o ') o el símbolo de grados (°) y confirmar que el ticket no sale corrupto ni corta el texto a mitad de línea (verifica en hardware real el fix de `escpos.js` que evita inyectar bytes de control ESC/POS).
 
 - [ ] **Step 2: Verificar en Android con RawBT**
   1. Instalar la app "RawBT Print Service" desde Play Store en el dispositivo Android.
   2. Emparejar la impresora térmica por Bluetooth en la configuración de Android y configurarla dentro de RawBT como impresora por defecto (según el flujo propio de la app).
   3. Abrir el ticket de una venta real en Chrome para Android.
   4. Hacer clic en "Imprimir térmica (BT)" y confirmar que Android abre RawBT y el ticket sale impreso correctamente.
-  5. Desinstalar temporalmente RawBT (o probar en un dispositivo sin la app) y confirmar que aparece el toast de error "Instala la app gratuita RawBT..." en vez de que la página se quede colgada.
+  5. Repetir la prueba con una empresa que tenga **logo configurado** (no solo texto) — el payload en base64 de un ticket con logo es bastante más grande (~10-25 KB) que uno sin logo (~1.5 KB), y solo la prueba con logo real confirma que RawBT/Android no tienen un límite de longitud de URL que rompa silenciosamente este flujo.
+  6. Desinstalar temporalmente RawBT (o probar en un dispositivo sin la app) y confirmar que aparece el toast de error "Instala la app gratuita RawBT..." en vez de que la página se quede colgada.
 
 - [ ] **Step 3: Confirmar que "Imprimir normal" sigue intacto**
 
