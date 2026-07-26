@@ -66,4 +66,32 @@ describe('escpos', () => {
   it('columns nunca deja menos de un espacio si el texto es más largo que el ancho', () => {
     expect(columns('12345', '67890', 5)).toBe('12345 67890');
   });
+
+  it('sanitizeText/text nunca producen bytes de control ESC/POS para comillas curvas o el símbolo de grados', () => {
+    const comillas = sanitizeText('“x”');
+    const grados = sanitizeText('20°');
+    // Ningún carácter resultante debe quedar fuera del rango ASCII imprimible.
+    for (const c of comillas) expect(c.charCodeAt(0)).toBeGreaterThanOrEqual(0x20);
+    for (const c of grados) expect(c.charCodeAt(0)).toBeGreaterThanOrEqual(0x20);
+
+    const bytesComillas = text('“x”');
+    const bytesGrados = text('20°');
+    for (const b of bytesComillas) {
+      expect(b).toBeGreaterThanOrEqual(0x20);
+      expect(b).toBeLessThanOrEqual(0x7E);
+    }
+    for (const b of bytesGrados) {
+      expect(b).toBeGreaterThanOrEqual(0x20);
+      expect(b).toBeLessThanOrEqual(0x7E);
+    }
+    // El carácter no reconocido se reemplaza por '?', no se enmascara a un byte arbitrario.
+    expect(Array.from(text('“x”'))).toEqual([0x3F, 0x78, 0x3F]);
+    expect(Array.from(text('20°'))).toEqual([0x32, 0x30, 0x3F]);
+  });
+
+  it('sanitizeText sigue normalizando el texto en español acentuado como antes', () => {
+    expect(sanitizeText('Compra a crédito, ¿está seguro? ¡Sí, señor!'))
+      .toBe('Compra a credito, ?esta seguro? !Si, senor!');
+    expect(Array.from(text('ñu'))).toEqual([110, 117]);
+  });
 });

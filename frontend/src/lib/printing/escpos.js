@@ -27,13 +27,22 @@ const MAPA_ACENTOS = {
 };
 
 export function sanitizeText(str) {
-  return String(str ?? '').replace(/[áéíóúÁÉÍÓÚñÑüÜ¿¡]/g, (c) => MAPA_ACENTOS[c] ?? c);
+  const conAcentosMapeados = String(str ?? '')
+    .replace(/[áéíóúÁÉÍÓÚñÑüÜ¿¡]/g, (c) => MAPA_ACENTOS[c] ?? c);
+  // Descompone cualquier diacrítico restante (NFD) y lo elimina, luego
+  // reemplaza cualquier carácter fuera del rango ASCII imprimible
+  // (0x20-0x7E) por '?' en vez de dejarlo pasar para ser enmascarado
+  // como un byte de control ESC/POS arbitrario en text().
+  return conAcentosMapeados
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^\x20-\x7E]/g, '?');
 }
 
 export function text(str) {
   const limpio = sanitizeText(str);
   const bytes = new Uint8Array(limpio.length);
-  for (let i = 0; i < limpio.length; i++) bytes[i] = limpio.charCodeAt(i) & 0x7F;
+  for (let i = 0; i < limpio.length; i++) bytes[i] = limpio.charCodeAt(i);
   return bytes;
 }
 

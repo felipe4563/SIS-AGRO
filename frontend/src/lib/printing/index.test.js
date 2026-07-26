@@ -14,7 +14,7 @@ vi.mock('./transports/rawbt', () => ({
 import { construirTicket } from './ticketBuilder';
 import { soportaWebSerial, imprimirPorWebSerial } from './transports/webSerial';
 import { imprimirPorRawBT } from './transports/rawbt';
-import { imprimirTermica } from './index';
+import { imprimirTermica, esAndroid } from './index';
 
 const construirTicketMock = vi.mocked(construirTicket);
 const soportaWebSerialMock = vi.mocked(soportaWebSerial);
@@ -39,12 +39,32 @@ describe('imprimirTermica', () => {
     expect(imprimirPorRawBTMock).not.toHaveBeenCalled();
   });
 
-  it('usa RawBT cuando el navegador no soporta Web Serial', async () => {
+  it('usa RawBT cuando el navegador no soporta Web Serial pero es Android', async () => {
     soportaWebSerialMock.mockReturnValue(false);
+    const navAndroid = { userAgent: 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/115.0' };
 
-    await imprimirTermica({ id_venta: 2 }, { nombre_empresa: 'Y' });
+    await imprimirTermica({ id_venta: 2 }, { nombre_empresa: 'Y' }, { nav: navAndroid });
 
     expect(imprimirPorRawBTMock).toHaveBeenCalledWith(new Uint8Array([1, 2, 3]));
     expect(imprimirPorWebSerialMock).not.toHaveBeenCalled();
+  });
+
+  it('lanza un error claro en escritorio sin Web Serial (Firefox/Safari en Windows), sin llamar a RawBT', async () => {
+    soportaWebSerialMock.mockReturnValue(false);
+    const navFirefoxWindows = {
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0',
+    };
+
+    await expect(
+      imprimirTermica({ id_venta: 3 }, { nombre_empresa: 'Z' }, { nav: navFirefoxWindows })
+    ).rejects.toThrow(/Chrome o Edge en Windows.*Chrome en Android.*RawBT/s);
+
+    expect(imprimirPorRawBTMock).not.toHaveBeenCalled();
+    expect(imprimirPorWebSerialMock).not.toHaveBeenCalled();
+  });
+
+  it('esAndroid detecta el user agent de Android', () => {
+    expect(esAndroid({ userAgent: 'Mozilla/5.0 (Linux; Android 13)' })).toBe(true);
+    expect(esAndroid({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Firefox/128.0' })).toBe(false);
   });
 });
