@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ventaService from '../../services/venta.service';
 import { useConfig } from '../../contexts/ConfigContext';
+import { imprimirTermica } from '../../lib/printing';
 
 const fmt = (n) => Number(n ?? 0).toFixed(2);
 const fmtFecha = (s) =>
@@ -12,6 +13,20 @@ const fmtFecha = (s) =>
       })
     : '—';
 
+function Toast({ toast }) {
+  if (!toast) return null;
+  const ok = toast.tipo === 'ok';
+  return (
+    <div className={`fixed bottom-5 right-5 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border text-sm font-semibold max-w-xs sm:max-w-sm backdrop-blur-sm ${
+      ok
+        ? 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300'
+        : 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300'
+    }`}>
+      <span className="break-words">{toast.msg}</span>
+    </div>
+  );
+}
+
 export default function VentaTicket() {
   const { id }               = useParams();
   const navigate             = useNavigate();
@@ -19,7 +34,26 @@ export default function VentaTicket() {
   const [venta, setVenta]    = useState(null);
   const [cargando, setCargando]       = useState(true);
   const [esperandoPago, setEsperandoPago] = useState(false);
+  const [imprimiendoTermica, setImprimiendoTermica] = useState(false);
+  const [toast, setToast] = useState(null);
   const pollingRef = useRef(null);
+
+  const mostrarToast = (tipo, msg) => {
+    setToast({ tipo, msg });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const handleImprimirTermica = async () => {
+    setImprimiendoTermica(true);
+    try {
+      await imprimirTermica(venta, configuracion);
+    } catch (err) {
+      if (err?.name === 'NotFoundError') return; // el usuario cerró el selector de puerto, no es un error
+      mostrarToast('error', err.message || 'Error al imprimir en la impresora térmica');
+    } finally {
+      setImprimiendoTermica(false);
+    }
+  };
 
   useEffect(() => {
     ventaService
@@ -95,6 +129,8 @@ export default function VentaTicket() {
 
   return (
     <>
+      <Toast toast={toast} />
+
       {/* ── Barra de botones (se oculta al imprimir) ── */}
       <div className="no-print flex gap-3 p-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <button
@@ -102,6 +138,13 @@ export default function VentaTicket() {
           className="px-5 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold text-sm transition-colors flex items-center gap-2"
         >
           🖨️ Imprimir (80mm)
+        </button>
+        <button
+          onClick={handleImprimirTermica}
+          disabled={imprimiendoTermica}
+          className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold text-sm transition-colors flex items-center gap-2"
+        >
+          🖨️ {imprimiendoTermica ? 'Imprimiendo…' : 'Imprimir térmica (BT)'}
         </button>
         <button
           onClick={() => navigate('/ventas')}
