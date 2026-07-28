@@ -283,7 +283,16 @@ export default function NuevaVenta() {
   useEffect(() => {
     if (carrito.length === 0 || productosStock.length === 0) return;
     setCarrito(prev => prev.map(item => {
-      const prod = productosStock.find(p => p.id_producto === item.id_producto);
+      const cant = parseFloat(item.cantidad) || 0;
+
+      if (item.es_mezcla) {
+        const mezcla = productosStock.find(p => p.tipo === 'MEZCLA' && p.id_mezcla === item.id_mezcla);
+        if (!mezcla) return item;
+        const nuevoPrecio = tipoVenta === 'MAYOR' ? mezcla.precio_mayor : mezcla.precio_menor;
+        return { ...item, precio_unitario: nuevoPrecio || 0, subtotal: cant * (nuevoPrecio || 0) };
+      }
+
+      const prod = productosStock.find(p => p.tipo !== 'MEZCLA' && p.id_producto === item.id_producto);
       if (!prod) return item;
       let nuevoPrecio;
       if (item.id_conversion) {
@@ -294,7 +303,6 @@ export default function NuevaVenta() {
       } else {
         nuevoPrecio = tipoVenta === 'MAYOR' ? prod.precio_mayor : prod.precio_menor;
       }
-      const cant = parseFloat(item.cantidad) || 0;
       return { ...item, precio_unitario: nuevoPrecio || 0, subtotal: cant * (nuevoPrecio || 0) };
     }));
   }, [tipoVenta]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -320,16 +328,23 @@ export default function NuevaVenta() {
         cajaService.obtenerTurnoActivo(),
       ]);
       setClientes(cliRes.data.filter(c => c.activo === 1));
-      setProductosStock(posRes.data.map(p => ({
-        ...p,
-        precio_menor:        parseFloat(p.precio_menor) || 0,
-        precio_mayor:        parseFloat(p.precio_mayor) || 0,
-        descuento_menor:     parseFloat(p.descuento_menor) || 0,
-        descuento_mayor:     parseFloat(p.descuento_mayor) || 0,
-        stock_unidades_total: parseFloat(p.stock_unidades_total) || 0,
-        permite_fraccion:    p.permite_fraccion || 0,
-        fracciones:          p.fracciones || [],
-      })));
+      setProductosStock(posRes.data.map(p => p.tipo === 'MEZCLA'
+        ? {
+            ...p,
+            precio_menor: parseFloat(p.precio_menor) || 0,
+            precio_mayor: parseFloat(p.precio_mayor) || 0,
+          }
+        : {
+            ...p,
+            precio_menor:        parseFloat(p.precio_menor) || 0,
+            precio_mayor:        parseFloat(p.precio_mayor) || 0,
+            descuento_menor:     parseFloat(p.descuento_menor) || 0,
+            descuento_mayor:     parseFloat(p.descuento_mayor) || 0,
+            stock_unidades_total: parseFloat(p.stock_unidades_total) || 0,
+            permite_fraccion:    p.permite_fraccion || 0,
+            fracciones:          p.fracciones || [],
+          }
+      ));
       setTurnoActivo(turnoRes.data); // null si no hay turno abierto
     } catch {
       mostrarToast('error', 'Error al cargar datos del POS');
@@ -360,21 +375,37 @@ export default function NuevaVenta() {
   };
 
   const agregarAlCarrito = (prod) => {
-    const index = carrito.findIndex(item => item.id_producto === prod.id_producto);
+    const esMezcla = prod.tipo === 'MEZCLA';
     const precioBase = tipoVenta === 'MAYOR' ? prod.precio_mayor : prod.precio_menor;
+
+    const index = carrito.findIndex(item => esMezcla
+      ? item.es_mezcla && item.id_mezcla === prod.id_mezcla
+      : !item.es_mezcla && item.id_producto === prod.id_producto);
+
     if (index >= 0) {
       const itemActual = carrito[index];
       const nuevaCant = itemActual.cantidad + 1;
-      const unidadesReq = calcUnidadesBase(itemActual, nuevaCant);
-      if (!puedeVenderSinStock && unidadesReq > prod.stock_unidades_total) {
-        mostrarToast('error', 'No hay suficiente stock disponible');
-        return;
+      if (!esMezcla) {
+        const unidadesReq = calcUnidadesBase(itemActual, nuevaCant);
+        if (!puedeVenderSinStock && unidadesReq > prod.stock_unidades_total) {
+          mostrarToast('error', 'No hay suficiente stock disponible');
+          return;
+        }
       }
       setCarrito(carrito.map((item, i) =>
         i === index
           ? { ...item, cantidad: nuevaCant, subtotal: nuevaCant * item.precio_unitario }
           : item
       ));
+    } else if (esMezcla) {
+      setCarrito([...carrito, {
+        es_mezcla:       true,
+        id_mezcla:       prod.id_mezcla,
+        nombre:          prod.nombre,
+        cantidad:        1,
+        precio_unitario: precioBase || 0,
+        subtotal:        precioBase || 0,
+      }]);
     } else {
       setCarrito([...carrito, {
         id_producto:      prod.id_producto,
@@ -416,10 +447,12 @@ export default function NuevaVenta() {
       if (campo === 'cantidad' || campo === 'precio_unitario') {
         const cant  = parseFloat(updated.cantidad) || 0;
         const precio = parseFloat(updated.precio_unitario) || 0;
-        const unidadesReq = calcUnidadesBase(updated, cant);
-        if (!puedeVenderSinStock && unidadesReq > updated.stock_maximo) {
-          mostrarToast('error', `Stock disponible: ${updated.stock_maximo} unidades`);
-          return { ...item, cantidad: 1, subtotal: parseFloat(item.precio_unitario) || 0 };
+        if (!updated.es_mezcla) {
+          const unidadesReq = calcUnidadesBase(updated, cant);
+          if (!puedeVenderSinStock && unidadesReq > updated.stock_maximo) {
+            mostrarToast('error', `Stock disponible: ${updated.stock_maximo} unidades`);
+            return { ...item, cantidad: 1, subtotal: parseFloat(item.precio_unitario) || 0 };
+          }
         }
         return { ...updated, subtotal: cant * precio };
       }
@@ -470,7 +503,16 @@ export default function NuevaVenta() {
       cambio:          esCredito ? 0 : (totales.cambio > 0 ? totales.cambio : 0),
       metodo_pago:     metodoPago,
       fecha_vencimiento_credito: esCredito ? fechaVencimientoCredito || null : null,
-      detalles: carrito.map(c => ({
+      detalles: carrito.map(c => c.es_mezcla ? {
+        tipo:            'MEZCLA',
+        id_mezcla:       c.id_mezcla,
+        nombre:          c.nombre,
+        cantidad_tandas: parseFloat(c.cantidad),
+        precio_unitario: parseFloat(c.precio_unitario),
+        descuento_pct:   parseFloat(descuentoPct) || 0,
+        descuento_monto: parseFloat(c.subtotal) * (1 - factor),
+        subtotal:        parseFloat(c.subtotal) * factor,
+      } : {
         id_producto:       c.id_producto,
         nombre:            c.nombre,
         tipo_cantidad:     c.tipo_cantidad,
@@ -481,7 +523,7 @@ export default function NuevaVenta() {
         descuento_pct:     parseFloat(descuentoPct) || 0,
         descuento_monto:   parseFloat(c.subtotal) * (1 - factor),
         subtotal:          parseFloat(c.subtotal) * factor,
-      })),
+      }),
     };
   };
 
@@ -647,7 +689,7 @@ export default function NuevaVenta() {
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2.5">
             {productosFiltrados.map(p => {
               const precio = tipoVenta === 'MAYOR' ? p.precio_mayor : p.precio_menor;
-              const sinStock = p.stock_unidades_total === 0;
+              const sinStock = p.tipo !== 'MEZCLA' && p.stock_unidades_total === 0;
               return (
                 <button
                   key={p.id_producto}
@@ -663,6 +705,11 @@ export default function NuevaVenta() {
                     <h3 className="font-semibold text-zinc-900 dark:text-white text-xs sm:text-sm leading-tight line-clamp-2 flex-1">
                       {p.nombre}
                     </h3>
+                    {p.tipo === 'MEZCLA' && (
+                      <span className="shrink-0 text-[9px] px-1 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 font-bold leading-none">
+                        🧪 Mezcla
+                      </span>
+                    )}
                     {p.permite_fraccion === 1 && (
                       <span className="shrink-0 text-[9px] px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold leading-none">
                         Frac
@@ -684,15 +731,17 @@ export default function NuevaVenta() {
                         Bs {precio.toFixed(2)}
                       </p>
                     </div>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
-                      sinStock
-                        ? 'bg-red-100 dark:bg-red-900/30 text-red-500'
-                        : p.stock_unidades_total <= 5
-                          ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600'
-                          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
-                    }`}>
-                      {sinStock ? 'Sin stock' : `${p.stock_unidades_total}u`}
-                    </span>
+                    {p.tipo !== 'MEZCLA' && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                        sinStock
+                          ? 'bg-red-100 dark:bg-red-900/30 text-red-500'
+                          : p.stock_unidades_total <= 5
+                            ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600'
+                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
+                      }`}>
+                        {sinStock ? 'Sin stock' : `${p.stock_unidades_total}u`}
+                      </span>
+                    )}
                   </div>
                 </button>
               );
@@ -783,20 +832,24 @@ export default function NuevaVenta() {
             <div className="grid grid-cols-3 gap-1.5 px-3 pb-2.5">
               {/* Cantidad */}
               <div>
-                <p className="text-[9px] text-zinc-400 uppercase tracking-wider mb-1">Cant.</p>
+                <p className="text-[9px] text-zinc-400 uppercase tracking-wider mb-1">
+                  {item.es_mezcla ? 'Tandas' : 'Cant.'}
+                </p>
                 <input
-                  type="number" min="1"
+                  type="number" min={item.es_mezcla ? '0.001' : '1'} step={item.es_mezcla ? '0.001' : '1'}
                   value={item.cantidad}
                   onChange={(e) => actualizarItem(idx, 'cantidad', e.target.value)}
                   className="w-full text-center py-1.5 px-1 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm font-semibold outline-none focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
-              {/* Tipo / Sub-unidad */}
+              {/* Tipo / Sub-unidad — no aplica a mezclas (siempre son "tandas") */}
               <div>
                 <p className="text-[9px] text-zinc-400 uppercase tracking-wider mb-1">
-                  {item.permite_fraccion && item.fracciones?.length > 0 ? 'Sub-unidad' : 'Tipo'}
+                  {item.es_mezcla ? 'Mezcla' : item.permite_fraccion && item.fracciones?.length > 0 ? 'Sub-unidad' : 'Tipo'}
                 </p>
-                {item.permite_fraccion && item.fracciones?.length > 0 ? (
+                {item.es_mezcla ? (
+                  <div className="w-full py-1.5 px-1 text-center text-xs text-zinc-400 dark:text-zinc-500">🧪</div>
+                ) : item.permite_fraccion && item.fracciones?.length > 0 ? (
                   <select
                     value={item.id_conversion ?? ''}
                     onChange={(e) => actualizarItem(idx, 'id_conversion', e.target.value)}
