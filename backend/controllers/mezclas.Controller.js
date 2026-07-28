@@ -192,6 +192,11 @@ async function aplicarMezclaTx(conn, {
   id_mezcla, id_empresa, id_sucursal, id_usuario,
   cantidad_tandas, observaciones = null, id_venta = null,
 }) {
+  const tandasNum = parseFloat(cantidad_tandas);
+  if (isNaN(tandasNum) || tandasNum <= 0) {
+    throw Object.assign(new Error('La cantidad de tandas debe ser mayor a 0'), { status: 400 });
+  }
+
   // Verificar mezcla activa y de la misma empresa
   const [[mezcla]] = await conn.query(
     `SELECT m.* FROM mezcla m
@@ -219,7 +224,7 @@ async function aplicarMezclaTx(conn, {
   const [apRes] = await conn.query(
     `INSERT INTO aplicacion_mezcla (id_mezcla, id_sucursal, id_usuario, id_venta, cantidad_tandas, observaciones)
      VALUES (?, ?, ?, ?, ?, ?)`,
-    [id_mezcla, id_sucursal, id_usuario, id_venta, cantidad_tandas, observaciones]
+    [id_mezcla, id_sucursal, id_usuario, id_venta, tandasNum, observaciones]
   );
   const id_aplicacion = apRes.insertId;
 
@@ -227,10 +232,10 @@ async function aplicarMezclaTx(conn, {
 
   // Procesar cada ingrediente con lógica FEFO (First Expired First Out)
   for (const ing of ingredientes) {
-    const totalNecesario = parseFloat(ing.cantidad) * cantidad_tandas;
+    const totalNecesario = parseFloat(ing.cantidad) * tandasNum;
 
     const [lotes] = await conn.query(
-      `SELECT l.id_lote, l.stock_unidades, l.fecha_vencimiento
+      `SELECT l.id_lote, l.stock_unidades, l.unidades_por_caja, l.fecha_vencimiento
        FROM lote l
        WHERE l.id_producto = ? AND l.id_sucursal = ? AND l.stock_unidades > 0 AND l.activo = 1
        ORDER BY l.fecha_vencimiento ASC, l.id_lote ASC
@@ -251,10 +256,12 @@ async function aplicarMezclaTx(conn, {
       if (restante <= 0) break;
       const descontar = Math.min(restante, parseFloat(lote.stock_unidades));
       restante -= descontar;
+      lote.stock_unidades = parseFloat(lote.stock_unidades) - descontar;
+      const nuevasCajas = Math.floor(lote.stock_unidades / lote.unidades_por_caja);
 
       await conn.query(
-        `UPDATE lote SET stock_unidades = stock_unidades - ? WHERE id_lote = ?`,
-        [descontar, lote.id_lote]
+        `UPDATE lote SET stock_unidades = ?, stock_cajas = ? WHERE id_lote = ?`,
+        [lote.stock_unidades, nuevasCajas, lote.id_lote]
       );
 
       const [movRes] = await conn.query(
