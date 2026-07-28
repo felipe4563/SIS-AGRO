@@ -23,6 +23,8 @@ const fmt = (n) => Number(n ?? 0).toLocaleString('es-BO', { minimumFractionDigit
 function ModalMezcla({ abierto, mezcla, productos, unidades, onGuardar, onCerrar }) {
   const [nombre, setNombre]       = useState('');
   const [descripcion, setDesc]    = useState('');
+  const [precioMayor, setPrecioMayor] = useState('');
+  const [precioMenor, setPrecioMenor] = useState('');
   const [ingredientes, setIngs]   = useState([]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError]         = useState(null);
@@ -31,6 +33,8 @@ function ModalMezcla({ abierto, mezcla, productos, unidades, onGuardar, onCerrar
     if (!abierto) return;
     setNombre(mezcla?.nombre || '');
     setDesc(mezcla?.descripcion || '');
+    setPrecioMayor(mezcla?.precio_mayor != null ? String(mezcla.precio_mayor) : '');
+    setPrecioMenor(mezcla?.precio_menor != null ? String(mezcla.precio_menor) : '');
     setIngs(mezcla?.ingredientes?.map(i => ({
       id_producto: String(i.id_producto),
       cantidad:    String(i.cantidad),
@@ -62,9 +66,15 @@ function ModalMezcla({ abierto, mezcla, productos, unidades, onGuardar, onCerrar
     if (!nombre.trim()) { setError('El nombre es obligatorio'); return; }
     const ingsLimpios = ingredientes.filter(f => f.id_producto && f.cantidad && f.id_unidad);
     if (ingsLimpios.length === 0) { setError('Agrega al menos un ingrediente completo'); return; }
+    const pMayor = parseFloat(precioMayor) || 0;
+    const pMenor = parseFloat(precioMenor) || 0;
+    if (pMayor < 0 || pMenor < 0) { setError('Los precios no pueden ser negativos'); return; }
     setGuardando(true);
     try {
-      const payload = { nombre: nombre.trim(), descripcion: descripcion.trim(), ingredientes: ingsLimpios };
+      const payload = {
+        nombre: nombre.trim(), descripcion: descripcion.trim(), ingredientes: ingsLimpios,
+        precio_mayor: pMayor, precio_menor: pMenor,
+      };
       if (mezcla) await mezclaService.editar(mezcla.id_mezcla, payload);
       else        await mezclaService.crear(payload);
       onGuardar();
@@ -110,6 +120,22 @@ function ModalMezcla({ abierto, mezcla, productos, unidades, onGuardar, onCerrar
                            bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100 text-sm resize-none
                            focus:outline-none focus:ring-2 focus:ring-green-500/40"
                 placeholder="Instrucciones, uso recomendado..." />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1">Precio de venta mayor (Bs, por tanda)</label>
+              <input type="number" min="0" step="0.5" value={precioMayor} onChange={e => setPrecioMayor(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700
+                           bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100 text-sm
+                           focus:outline-none focus:ring-2 focus:ring-green-500/40"
+                placeholder="0.00" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1">Precio de venta menor (Bs, por tanda)</label>
+              <input type="number" min="0" step="0.5" value={precioMenor} onChange={e => setPrecioMenor(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700
+                           bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100 text-sm
+                           focus:outline-none focus:ring-2 focus:ring-green-500/40"
+                placeholder="0.00" />
             </div>
           </div>
 
