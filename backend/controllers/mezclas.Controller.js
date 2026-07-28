@@ -6,6 +6,7 @@ const listarMezclas = async (req, res) => {
   try {
     const [mezclas] = await db.promise().query(
       `SELECT m.id_mezcla, m.nombre, m.descripcion, m.activo, m.creado_en,
+              m.precio_mayor, m.precio_menor,
               COUNT(mi.id_ingrediente) AS total_ingredientes
        FROM mezcla m
        LEFT JOIN mezcla_ingrediente mi ON m.id_mezcla = mi.id_mezcla
@@ -52,19 +53,23 @@ const obtenerMezcla = async (req, res) => {
 // ── Crear mezcla con ingredientes ─────────────────────────────────────────
 const crearMezcla = async (req, res) => {
   const id_empresa = req.user.id_empresa;
-  const { nombre, descripcion, ingredientes } = req.body;
+  const { nombre, descripcion, ingredientes, precio_mayor, precio_menor } = req.body;
 
   if (!nombre?.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
   if (!Array.isArray(ingredientes) || ingredientes.length === 0)
     return res.status(400).json({ error: 'Debe agregar al menos un ingrediente' });
+  const precioMayorNum = parseFloat(precio_mayor) || 0;
+  const precioMenorNum = parseFloat(precio_menor) || 0;
+  if (precioMayorNum < 0 || precioMenorNum < 0)
+    return res.status(400).json({ error: 'Los precios no pueden ser negativos' });
 
   const conn = await db.promise().getConnection();
   try {
     await conn.beginTransaction();
 
     const [r] = await conn.query(
-      `INSERT INTO mezcla (id_empresa, nombre, descripcion) VALUES (?, ?, ?)`,
-      [id_empresa, nombre.trim(), descripcion?.trim() || null]
+      `INSERT INTO mezcla (id_empresa, nombre, descripcion, precio_mayor, precio_menor) VALUES (?, ?, ?, ?, ?)`,
+      [id_empresa, nombre.trim(), descripcion?.trim() || null, precioMayorNum, precioMenorNum]
     );
     const id_mezcla = r.insertId;
 
@@ -97,11 +102,15 @@ const crearMezcla = async (req, res) => {
 const editarMezcla = async (req, res) => {
   const id_empresa = req.user.id_empresa;
   const { id } = req.params;
-  const { nombre, descripcion, ingredientes } = req.body;
+  const { nombre, descripcion, ingredientes, precio_mayor, precio_menor } = req.body;
 
   if (!nombre?.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
   if (!Array.isArray(ingredientes) || ingredientes.length === 0)
     return res.status(400).json({ error: 'Debe agregar al menos un ingrediente' });
+  const precioMayorNum = parseFloat(precio_mayor) || 0;
+  const precioMenorNum = parseFloat(precio_menor) || 0;
+  if (precioMayorNum < 0 || precioMenorNum < 0)
+    return res.status(400).json({ error: 'Los precios no pueden ser negativos' });
 
   const conn = await db.promise().getConnection();
   try {
@@ -114,8 +123,8 @@ const editarMezcla = async (req, res) => {
     if (!existe) { await conn.rollback(); return res.status(404).json({ error: 'Mezcla no encontrada' }); }
 
     await conn.query(
-      `UPDATE mezcla SET nombre = ?, descripcion = ? WHERE id_mezcla = ?`,
-      [nombre.trim(), descripcion?.trim() || null, id]
+      `UPDATE mezcla SET nombre = ?, descripcion = ?, precio_mayor = ?, precio_menor = ? WHERE id_mezcla = ?`,
+      [nombre.trim(), descripcion?.trim() || null, precioMayorNum, precioMenorNum, id]
     );
 
     // Reemplazar ingredientes por completo
@@ -166,7 +175,114 @@ const toggleMezcla = async (req, res) => {
   }
 };
 
-// ── Aplicar mezcla — descuenta stock de la sucursal del usuario ───────────
+// ── Error tipado para stock insuficiente (usado por aplicarMezclaTx) ──────
+class StockInsuficienteError extends Error {
+  constructor(detalle) {
+    super(`Stock insuficiente en esta sucursal: ${detalle.join('; ')}`);
+    this.name = 'StockInsuficienteError';
+    this.status = 400;
+    this.detalle = detalle;
+  }
+}
+
+// ── Lógica compartida: descuenta ingredientes de una mezcla vía FEFO ──────
+// Sin HTTP — la usan tanto el endpoint "Aplicar" como el motor de ventas.
+// Debe ejecutarse dentro de una transacción abierta por quien la llama.
+async function aplicarMezclaTx(conn, {
+  id_mezcla, id_empresa, id_sucursal, id_usuario,
+  cantidad_tandas, observaciones = null, id_venta = null,
+}) {
+  // Verificar mezcla activa y de la misma empresa
+  const [[mezcla]] = await conn.query(
+    `SELECT m.* FROM mezcla m
+     JOIN empresa e ON m.id_empresa = e.id_empresa
+     WHERE m.id_mezcla = ? AND m.id_empresa = ? AND m.activo = 1`,
+    [id_mezcla, id_empresa]
+  );
+  if (!mezcla) {
+    throw Object.assign(new Error('Mezcla no encontrada o inactiva'), { status: 404 });
+  }
+
+  const [ingredientes] = await conn.query(
+    `SELECT mi.*, p.nombre AS producto_nombre, u.abreviatura AS unidad_abr
+     FROM mezcla_ingrediente mi
+     JOIN producto p ON mi.id_producto = p.id_producto
+     JOIN unidad_medida u ON mi.id_unidad = u.id_unidad
+     WHERE mi.id_mezcla = ?`,
+    [id_mezcla]
+  );
+  if (ingredientes.length === 0) {
+    throw Object.assign(new Error('La mezcla no tiene ingredientes definidos'), { status: 400 });
+  }
+
+  // Crear cabecera de aplicacion_mezcla primero para obtener el ID
+  const [apRes] = await conn.query(
+    `INSERT INTO aplicacion_mezcla (id_mezcla, id_sucursal, id_usuario, id_venta, cantidad_tandas, observaciones)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [id_mezcla, id_sucursal, id_usuario, id_venta, cantidad_tandas, observaciones]
+  );
+  const id_aplicacion = apRes.insertId;
+
+  const stockInsuficiente = [];
+
+  // Procesar cada ingrediente con lógica FEFO (First Expired First Out)
+  for (const ing of ingredientes) {
+    const totalNecesario = parseFloat(ing.cantidad) * cantidad_tandas;
+
+    const [lotes] = await conn.query(
+      `SELECT l.id_lote, l.stock_unidades, l.fecha_vencimiento
+       FROM lote l
+       WHERE l.id_producto = ? AND l.id_sucursal = ? AND l.stock_unidades > 0 AND l.activo = 1
+       ORDER BY l.fecha_vencimiento ASC, l.id_lote ASC
+       FOR UPDATE`,
+      [ing.id_producto, id_sucursal]
+    );
+
+    const disponible = lotes.reduce((acc, l) => acc + parseFloat(l.stock_unidades), 0);
+    if (disponible < totalNecesario) {
+      stockInsuficiente.push(
+        `${ing.producto_nombre}: necesario ${totalNecesario} ${ing.unidad_abr}, disponible ${disponible} ${ing.unidad_abr}`
+      );
+      continue;
+    }
+
+    let restante = totalNecesario;
+    for (const lote of lotes) {
+      if (restante <= 0) break;
+      const descontar = Math.min(restante, parseFloat(lote.stock_unidades));
+      restante -= descontar;
+
+      await conn.query(
+        `UPDATE lote SET stock_unidades = stock_unidades - ? WHERE id_lote = ?`,
+        [descontar, lote.id_lote]
+      );
+
+      const [movRes] = await conn.query(
+        `INSERT INTO movimiento_almacen
+          (id_lote, id_sucursal, id_usuario, tipo, motivo, cantidad_unidades,
+           referencia_id, referencia_tipo, observaciones)
+         VALUES (?, ?, ?, 'SALIDA', 'MEZCLA', ?, ?, 'MEZCLA', ?)`,
+        [lote.id_lote, id_sucursal, id_usuario, descontar,
+         id_aplicacion, `Mezcla: ${mezcla.nombre}`]
+      );
+
+      await conn.query(
+        `INSERT INTO aplicacion_mezcla_detalle
+          (id_aplicacion, id_lote, id_producto, cantidad_descontada, id_unidad, id_movimiento_almacen)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [id_aplicacion, lote.id_lote, ing.id_producto, descontar, ing.id_unidad, movRes.insertId]
+      );
+    }
+  }
+
+  if (stockInsuficiente.length > 0) {
+    throw new StockInsuficienteError(stockInsuficiente);
+  }
+
+  return { id_aplicacion, mezcla };
+}
+
+// ── Aplicar mezcla (HTTP) — descuenta stock de la sucursal del usuario ────
 const aplicarMezcla = async (req, res) => {
   const id_empresa  = req.user.id_empresa;
   const id_usuario  = req.user.id_usuario;
@@ -185,102 +301,10 @@ const aplicarMezcla = async (req, res) => {
   try {
     await conn.beginTransaction();
 
-    // Verificar mezcla activa y de la misma empresa
-    const [[mezcla]] = await conn.query(
-      `SELECT m.* FROM mezcla m
-       JOIN empresa e ON m.id_empresa = e.id_empresa
-       WHERE m.id_mezcla = ? AND m.id_empresa = ? AND m.activo = 1`,
-      [id, id_empresa]
-    );
-    if (!mezcla) {
-      await conn.rollback();
-      return res.status(404).json({ error: 'Mezcla no encontrada o inactiva' });
-    }
-
-    const [ingredientes] = await conn.query(
-      `SELECT mi.*, p.nombre AS producto_nombre, u.abreviatura AS unidad_abr
-       FROM mezcla_ingrediente mi
-       JOIN producto p ON mi.id_producto = p.id_producto
-       JOIN unidad_medida u ON mi.id_unidad = u.id_unidad
-       WHERE mi.id_mezcla = ?`,
-      [id]
-    );
-    if (ingredientes.length === 0) {
-      await conn.rollback();
-      return res.status(400).json({ error: 'La mezcla no tiene ingredientes definidos' });
-    }
-
-    // Crear cabecera de aplicacion_mezcla primero para obtener el ID
-    const [apRes] = await conn.query(
-      `INSERT INTO aplicacion_mezcla (id_mezcla, id_sucursal, id_usuario, cantidad_tandas, observaciones)
-       VALUES (?, ?, ?, ?, ?)`,
-      [id, id_sucursal, id_usuario, tandas, observaciones || null]
-    );
-    const id_aplicacion = apRes.insertId;
-
-    const stockInsuficiente = [];
-
-    // Procesar cada ingrediente con lógica FEFO (First Expired First Out)
-    for (const ing of ingredientes) {
-      const totalNecesario = parseFloat(ing.cantidad) * tandas;
-
-      // Lotes de ESTA sucursal, con stock, ordenados por vencimiento más próximo
-      const [lotes] = await conn.query(
-        `SELECT l.id_lote, l.stock_unidades, l.fecha_vencimiento
-         FROM lote l
-         WHERE l.id_producto = ? AND l.id_sucursal = ? AND l.stock_unidades > 0 AND l.activo = 1
-         ORDER BY l.fecha_vencimiento ASC, l.id_lote ASC
-         FOR UPDATE`,
-        [ing.id_producto, id_sucursal]
-      );
-
-      const disponible = lotes.reduce((acc, l) => acc + parseFloat(l.stock_unidades), 0);
-      if (disponible < totalNecesario) {
-        stockInsuficiente.push(
-          `${ing.producto_nombre}: necesario ${totalNecesario} ${ing.unidad_abr}, disponible ${disponible} ${ing.unidad_abr}`
-        );
-        continue;
-      }
-
-      let restante = totalNecesario;
-      for (const lote of lotes) {
-        if (restante <= 0) break;
-        const descontar = Math.min(restante, parseFloat(lote.stock_unidades));
-        restante -= descontar;
-
-        // Actualizar stock del lote
-        await conn.query(
-          `UPDATE lote SET stock_unidades = stock_unidades - ? WHERE id_lote = ?`,
-          [descontar, lote.id_lote]
-        );
-
-        // Registrar en kardex (movimiento_almacen)
-        const [movRes] = await conn.query(
-          `INSERT INTO movimiento_almacen
-            (id_lote, id_sucursal, id_usuario, tipo, motivo, cantidad_unidades,
-             referencia_id, referencia_tipo, observaciones)
-           VALUES (?, ?, ?, 'SALIDA', 'MEZCLA', ?, ?, 'MEZCLA', ?)`,
-          [lote.id_lote, id_sucursal, id_usuario, descontar,
-           id_aplicacion, `Mezcla: ${mezcla.nombre}`]
-        );
-
-        // Detalle de la aplicación
-        await conn.query(
-          `INSERT INTO aplicacion_mezcla_detalle
-            (id_aplicacion, id_lote, id_producto, cantidad_descontada, id_unidad, id_movimiento_almacen)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [id_aplicacion, lote.id_lote, ing.id_producto, descontar, ing.id_unidad, movRes.insertId]
-        );
-      }
-    }
-
-    if (stockInsuficiente.length > 0) {
-      await conn.rollback();
-      return res.status(400).json({
-        error: 'Stock insuficiente en esta sucursal',
-        detalle: stockInsuficiente,
-      });
-    }
+    const { id_aplicacion } = await aplicarMezclaTx(conn, {
+      id_mezcla: id, id_empresa, id_sucursal, id_usuario,
+      cantidad_tandas: tandas, observaciones: observaciones || null,
+    });
 
     await conn.commit();
     return res.status(201).json({
@@ -290,7 +314,10 @@ const aplicarMezcla = async (req, res) => {
   } catch (err) {
     await conn.rollback();
     console.error('[aplicarMezcla]', err);
-    return res.status(500).json({ error: 'Error al aplicar la mezcla' });
+    const status = err.status || 500;
+    const body = { error: err.message || 'Error al aplicar la mezcla' };
+    if (err.detalle) body.detalle = err.detalle;
+    return res.status(status).json(body);
   } finally {
     conn.release();
   }
@@ -361,6 +388,7 @@ module.exports = {
   editarMezcla,
   toggleMezcla,
   aplicarMezcla,
+  aplicarMezclaTx,
   listarAplicaciones,
   listarProductosAux,
   listarUnidadesAux,
