@@ -692,7 +692,7 @@ export default function NuevaVenta() {
               const sinStock = p.tipo !== 'MEZCLA' && p.stock_unidades_total === 0;
               return (
                 <button
-                  key={p.id_producto}
+                  key={p.tipo === 'MEZCLA' ? `mezcla-${p.id_mezcla}` : p.id_producto}
                   onClick={() => agregarAlCarrito(p)}
                   disabled={sinStock && !puedeVenderSinStock}
                   className={`group relative bg-white dark:bg-zinc-900 rounded-2xl p-3 shadow-sm border transition-all text-left flex flex-col gap-1 ${
