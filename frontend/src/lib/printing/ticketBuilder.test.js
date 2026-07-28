@@ -94,4 +94,22 @@ describe('buildTicketBytes', () => {
       b === 0x1D && bytesArray[i + 1] === 0x76 && bytesArray[i + 2] === 0x30);
     expect(idx).toBeGreaterThanOrEqual(0);
   });
+
+  it('muestra "tandas" y el nombre de la mezcla en una línea de mezcla, sin lote', () => {
+    const venta = {
+      ...ventaBase,
+      detalles: [
+        ventaBase.detalles[0],
+        {
+          id_detalle_venta: 2, id_mezcla: 7, mezcla_nombre: 'Fumigacion Maiz',
+          cantidad: 2, subtotal: 60, precio_unitario: 30, descuento_pct: 0,
+        },
+      ],
+    };
+    const bytes = buildTicketBytes(venta, configBase, null);
+    const texto = bytesToTexto(bytes);
+
+    expect(texto).toContain('2 tandas - Fumigacion Maiz');
+    expect(texto).not.toContain('Lote: S/N');
+  });
 });

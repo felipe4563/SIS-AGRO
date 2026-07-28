@@ -70,11 +70,14 @@ export function buildTicketBytes(venta, configuracion, logoBitmap = null) {
   partes.push(esc.line('DETALLE'));
   partes.push(esc.bold(false));
   for (const d of venta.detalles || []) {
-    const cantidadTexto = `${d.cantidad} ${d.tipo_cantidad === 'CAJA' ? 'cj' : 'un'} - ${d.producto_nombre}`;
+    const esMezcla = Boolean(d.id_mezcla);
+    const cantidadTexto = esMezcla
+      ? `${d.cantidad} tanda${parseFloat(d.cantidad) !== 1 ? 's' : ''} - ${d.mezcla_nombre}`
+      : `${d.cantidad} ${d.tipo_cantidad === 'CAJA' ? 'cj' : 'un'} - ${d.producto_nombre}`;
     partes.push(esc.line(esc.columns(cantidadTexto, `Bs ${fmt(d.subtotal)}`, ANCHO_COLUMNAS)));
     let detalle = `  P.U.: Bs ${fmt(d.precio_unitario)}`;
     if (parseFloat(d.descuento_pct) > 0) detalle += ` (-${d.descuento_pct}%)`;
-    detalle += ` - Lote: ${d.numero_lote || 'S/N'}`;
+    if (!esMezcla) detalle += ` - Lote: ${d.numero_lote || 'S/N'}`;
     partes.push(esc.line(detalle));
   }
 

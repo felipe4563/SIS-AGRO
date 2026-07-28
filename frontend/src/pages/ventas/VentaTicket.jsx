@@ -253,14 +253,16 @@ export default function VentaTicket() {
 
           <div style={sep} />
 
-          {/* Detalle de productos */}
+          {/* Detalle de productos y mezclas */}
           <div style={{ marginBottom: '4px' }}>
             <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>DETALLE</div>
             {(venta.detalles || []).map((d) => (
               <div key={d.id_detalle_venta} style={{ marginBottom: '4px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ maxWidth: '55mm', wordBreak: 'break-word' }}>
-                    {d.cantidad} {d.tipo_cantidad === 'CAJA' ? 'cj' : 'un'} — {d.producto_nombre}
+                    {d.id_mezcla
+                      ? `${d.cantidad} tanda${parseFloat(d.cantidad) !== 1 ? 's' : ''} — ${d.mezcla_nombre}`
+                      : `${d.cantidad} ${d.tipo_cantidad === 'CAJA' ? 'cj' : 'un'} — ${d.producto_nombre}`}
                   </span>
                   <span style={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                     Bs {fmt(d.subtotal)}
@@ -269,7 +271,7 @@ export default function VentaTicket() {
                 <div style={{ fontSize: '10px', color: '#444', paddingLeft: '4px' }}>
                   P.U.: Bs {fmt(d.precio_unitario)}
                   {parseFloat(d.descuento_pct) > 0 && ` (-${d.descuento_pct}%)`}
-                  {' · Lote: '}{d.numero_lote || 'S/N'}
+                  {!d.id_mezcla && <>{' · Lote: '}{d.numero_lote || 'S/N'}</>}
                 </div>
               </div>
             ))}
