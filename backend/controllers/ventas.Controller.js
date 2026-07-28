@@ -1,16 +1,22 @@
 const db = require('../config/db');
 const { generarOrderId, generarQR, consultarEstadoQR } = require('../services/codepay.service');
+const { aplicarMezclaTx } = require('./mezclas.Controller');
 
 // ── Helper privado: lógica FIFO compartida por crear e iniciarPagoQR ──────
 async function _insertarVentaFIFO(connection, {
-  id_sucursal, id_usuario, id_cliente, nro_factura, tipo_venta,
+  id_empresa, id_sucursal, id_usuario, id_cliente, nro_factura, tipo_venta,
   subtotal, descuento_total, total, monto_pagado, cambio,
   metodo_pago, observaciones, detalles,
   estado, codepay_order_id,
   fecha_vencimiento_credito,
 }) {
+  // Separar líneas de producto (motor FIFO existente) de líneas de mezcla
+  // (usan aplicarMezclaTx, que descuenta varios productos/lotes a la vez).
+  const detallesProducto = detalles.filter(d => d.tipo !== 'MEZCLA');
+  const detallesMezcla    = detalles.filter(d => d.tipo === 'MEZCLA');
+
   // 0. Pre-fetch factores de conversión para ítems fraccionados
-  const conversionIds = [...new Set(detalles.filter(d => d.id_conversion).map(d => d.id_conversion))];
+  const conversionIds = [...new Set(detallesProducto.filter(d => d.id_conversion).map(d => d.id_conversion))];
   const factoresMap = {};
   if (conversionIds.length > 0) {
     const phs = conversionIds.map(() => '?').join(',');
@@ -23,7 +29,7 @@ async function _insertarVentaFIFO(connection, {
 
   // 1. Validar y acumular requerimientos por producto
   const requerimientos = {};
-  for (const item of detalles) {
+  for (const item of detallesProducto) {
     if (!requerimientos[item.id_producto]) {
       requerimientos[item.id_producto] = { cantidadRequerida: 0, itemsOriginales: [] };
     }
@@ -128,6 +134,31 @@ async function _insertarVentaFIFO(connection, {
     }
   }
 
+  // 4. Procesar líneas de mezcla — descuenta ingredientes vía aplicarMezclaTx
+  //    (misma transacción: si falta stock de un ingrediente, se revierte toda la venta)
+  for (const item of detallesMezcla) {
+    const { id_aplicacion } = await aplicarMezclaTx(connection, {
+      id_mezcla:       item.id_mezcla,
+      id_empresa,
+      id_sucursal,
+      id_usuario,
+      cantidad_tandas: parseFloat(item.cantidad_tandas),
+      id_venta,
+    });
+
+    await connection.query(
+      `INSERT INTO detalle_venta
+        (id_venta, id_producto, id_mezcla, id_aplicacion, cantidad, precio_unitario, descuento_pct, descuento_monto, subtotal)
+       VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id_venta, item.id_mezcla, id_aplicacion,
+        parseFloat(item.cantidad_tandas), parseFloat(item.precio_unitario),
+        parseFloat(item.descuento_pct || 0), parseFloat(item.descuento_monto || 0),
+        parseFloat(item.subtotal),
+      ]
+    );
+  }
+
   return id_venta;
 }
 
@@ -176,10 +207,11 @@ const obtener = async (req, res) => {
     const venta = ventaRows[0];
 
     const [detalleRows] = await db.promise().query(
-      `SELECT d.*, p.nombre as producto_nombre, l.numero_lote
+      `SELECT d.*, p.nombre as producto_nombre, l.numero_lote, mz.nombre as mezcla_nombre
        FROM detalle_venta d
-       JOIN producto p ON d.id_producto = p.id_producto
+       LEFT JOIN producto p ON d.id_producto = p.id_producto
        LEFT JOIN lote l ON d.id_lote = l.id_lote
+       LEFT JOIN mezcla mz ON d.id_mezcla = mz.id_mezcla
        WHERE d.id_venta = ?`,
       [id]
     );
@@ -225,6 +257,7 @@ const crear = async (req, res) => {
     }
 
     const id_venta = await _insertarVentaFIFO(connection, {
+      id_empresa:   req.user.id_empresa,
       id_sucursal:  req.user.id_sucursal,
       id_usuario:   req.user.id_usuario,
       id_cliente, nro_factura, tipo_venta, subtotal,
@@ -281,6 +314,7 @@ const iniciarPagoQR = async (req, res) => {
     }
 
     const id_venta = await _insertarVentaFIFO(connection, {
+      id_empresa: req.user.id_empresa,
       id_sucursal, id_usuario,
       id_cliente, nro_factura, tipo_venta, subtotal,
       descuento_total, total,
@@ -384,6 +418,42 @@ const anular = async (req, res) => {
     }
 
     for (const det of detalles) {
+      if (det.id_mezcla) {
+        // Línea de mezcla: revertir cada ingrediente consumido por esta aplicación
+        const [ingredientesConsumidos] = await connection.query(
+          'SELECT id_lote, cantidad_descontada FROM aplicacion_mezcla_detalle WHERE id_aplicacion = ? FOR UPDATE',
+          [det.id_aplicacion]
+        );
+
+        for (const ing of ingredientesConsumidos) {
+          const [loteInfoIng] = await connection.query('SELECT stock_unidades, unidades_por_caja FROM lote WHERE id_lote = ? FOR UPDATE', [ing.id_lote]);
+          if (loteInfoIng.length === 0) continue;
+
+          const cantidadDevolver = parseFloat(ing.cantidad_descontada);
+          const nuevoStockUnidadesIng = loteInfoIng[0].stock_unidades + cantidadDevolver;
+          const nuevoStockCajasIng = Math.floor(nuevoStockUnidadesIng / loteInfoIng[0].unidades_por_caja);
+
+          await connection.query(
+            'UPDATE lote SET stock_unidades = ?, stock_cajas = ? WHERE id_lote = ?',
+            [nuevoStockUnidadesIng, nuevoStockCajasIng, ing.id_lote]
+          );
+
+          await connection.query(
+            `INSERT INTO movimiento_almacen
+              (id_lote, id_sucursal, id_usuario, tipo, motivo, cantidad_cajas, cantidad_unidades, referencia_id, referencia_tipo)
+             VALUES (?, ?, ?, 'INGRESO', 'ANULACION DE VENTA (MEZCLA)', ?, ?, ?, 'ANULACION')`,
+            [
+              ing.id_lote, id_sucursal, id_usuario,
+              Math.floor(cantidadDevolver / loteInfoIng[0].unidades_por_caja), cantidadDevolver,
+              id,
+            ]
+          );
+        }
+
+        await connection.query('UPDATE aplicacion_mezcla SET anulada = 1 WHERE id_aplicacion = ?', [det.id_aplicacion]);
+        continue;
+      }
+
       // Necesitamos las unidades por caja del lote para el recalculo de cajas
       const [loteInfo] = await connection.query('SELECT stock_unidades, unidades_por_caja FROM lote WHERE id_lote = ? FOR UPDATE', [det.id_lote]);
       if (loteInfo.length === 0) continue;
@@ -432,9 +502,10 @@ const anular = async (req, res) => {
   }
 };
 
-// Productos disponibles para el POS — agrupados por producto, stock de la sucursal del usuario
+// Productos y mezclas disponibles para el POS — de la sucursal/empresa del usuario
 const listarProductosPOS = async (req, res) => {
   const id_sucursal = req.user.id_sucursal;
+  const id_empresa  = req.user.id_empresa;
   try {
     const [rows] = await db.promise().query(
       `SELECT
@@ -494,10 +565,28 @@ const listarProductosPOS = async (req, res) => {
 
     const result = rows.map(p => ({
       ...p,
+      tipo:       'PRODUCTO',
       fracciones: fraccionesMap[p.id_producto] || [],
     }));
 
-    return res.json(result);
+    // Mezclas activas de la empresa — sin filtrar por stock (se valida al vender,
+    // ya que una mezcla consume varios productos/lotes distintos)
+    const [mezclas] = await db.promise().query(
+      `SELECT id_mezcla, nombre, precio_mayor, precio_menor
+       FROM mezcla
+       WHERE id_empresa = ? AND activo = 1
+       ORDER BY nombre ASC`,
+      [id_empresa]
+    );
+    const mezclasResult = mezclas.map(m => ({
+      tipo:         'MEZCLA',
+      id_mezcla:    m.id_mezcla,
+      nombre:       m.nombre,
+      precio_mayor: parseFloat(m.precio_mayor) || 0,
+      precio_menor: parseFloat(m.precio_menor) || 0,
+    }));
+
+    return res.json([...result, ...mezclasResult]);
   } catch (err) {
     console.error('[listarProductosPOS]', err);
     return res.status(500).json({ error: 'Error al obtener productos para el POS' });
