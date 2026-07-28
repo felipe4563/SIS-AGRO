@@ -30,15 +30,6 @@ export default function ProtectedRoute({ children, action, subject, anyPermissio
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // ── 2. Setup pendiente → redirigir al wizard de onboarding ───────────
-  if (!usuario.setup_completado && location.pathname !== '/onboarding') {
-    return <Navigate to="/onboarding" replace />;
-  }
-  // ── 2b. Setup ya completo → no dejar entrar al onboarding ────────────
-  if (usuario.setup_completado && location.pathname === '/onboarding') {
-    return <Navigate to="/dashboard" replace />;
-  }
-
   // ── 3. anyPermission (OR) → acceso si tiene al menos uno ─────────────
   if (anyPermission) {
     const tieneAlguno = anyPermission.some(p => puede(p.action, p.subject));

@@ -136,7 +136,7 @@ const obtenerReporteCompras = async (req, res) => {
     let query = '';
     let params = [];
 
-    let whereClause = `c.estado != 'CANCELADO' AND c.id_sucursal = ?`;
+    let whereClause = `c.estado != 'ANULADA' AND c.id_sucursal = ?`;
     params.push(sucursalId);
 
     if (fechaInicio && fechaFin) {
@@ -338,7 +338,7 @@ const obtenerResumenFinanciero = async (req, res) => {
 
     const [comprasRows] = await db.promise().query(
       `SELECT COALESCE(SUM(total), 0) as total_compras
-       FROM compra WHERE estado != 'CANCELADO' AND id_sucursal = ? ${compraFechaClause}`,
+       FROM compra WHERE estado != 'ANULADA' AND id_sucursal = ? ${compraFechaClause}`,
       [sucursalId, ...compraFechaParams]
     );
 

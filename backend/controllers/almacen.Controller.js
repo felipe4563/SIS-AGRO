@@ -78,7 +78,7 @@ const ajusteInventario = async (req, res) => {
     const stockActual = loteInfo[0].stock_unidades;
     const diferencia = nueva_cantidad_unidades - stockActual;
     if (diferencia === 0) {
-      conn.release();
+      await conn.rollback();
       return res.json({ mensaje: 'No hay cambios en el inventario' });
     }
 
@@ -138,7 +138,7 @@ const crearLote = async (req, res) => {
     await conn.query(
       `INSERT INTO movimiento_almacen
         (id_lote, id_sucursal, id_usuario, tipo, motivo, cantidad_cajas, cantidad_unidades, referencia_tipo)
-       VALUES (?, ?, ?, 'ENTRADA', 'Ingreso manual de lote', ?, ?, 'MANUAL')`,
+       VALUES (?, ?, ?, 'INGRESO', 'Ingreso manual de lote', ?, ?, 'MANUAL')`,
       [id_lote, sucursal, id_usuario, cajas, stock_unidades]
     );
     await conn.commit();
@@ -305,7 +305,7 @@ const confirmarTraslado = async (req, res) => {
     await conn.query(
       `INSERT INTO movimiento_almacen
         (id_lote, id_sucursal, id_usuario, tipo, motivo, cantidad_cajas, cantidad_unidades, referencia_id, referencia_tipo)
-       VALUES (?, ?, ?, 'TRASLADO', 'Salida por traslado confirmado', ?, ?, ?, 'TRASLADO')`,
+       VALUES (?, ?, ?, 'TRASLADO_SALIDA', 'Salida por traslado confirmado', ?, ?, ?, 'TRASLADO')`,
       [t.id_lote_origen, lote.id_sucursal, id_usuario, t.cantidad_cajas, t.cantidad_unidades, id]
     );
 
@@ -336,7 +336,7 @@ const confirmarTraslado = async (req, res) => {
     await conn.query(
       `INSERT INTO movimiento_almacen
         (id_lote, id_sucursal, id_usuario, tipo, motivo, cantidad_cajas, cantidad_unidades, referencia_id, referencia_tipo)
-       VALUES (?, ?, ?, 'ENTRADA', 'Entrada por traslado confirmado', ?, ?, ?, 'TRASLADO')`,
+       VALUES (?, ?, ?, 'TRASLADO_ENTRADA', 'Entrada por traslado confirmado', ?, ?, ?, 'TRASLADO')`,
       [id_lote_dest, t.id_sucursal_dest, id_usuario, t.cantidad_cajas, t.cantidad_unidades, id]
     );
 

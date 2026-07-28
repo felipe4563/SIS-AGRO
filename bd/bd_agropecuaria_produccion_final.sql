@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Servidor: 127.0.0.1
--- Tiempo de generación: 19-06-2026 a las 16:03:37
+-- Tiempo de generación: 22-07-2026 a las 12:06:16
 -- Versión del servidor: 10.4.32-MariaDB
 -- Versión de PHP: 8.2.12
 
@@ -490,7 +490,14 @@ INSERT INTO `permiso` (`id_permiso`, `modulo`, `accion`, `nombre_clave`, `descri
 (133, 'conversiones', 'crear', 'conversiones.crear', 'Crear nuevas conversiones de unidad'),
 (134, 'conversiones', 'editar', 'conversiones.editar', 'Editar conversiones de unidad existentes'),
 (135, 'conversiones', 'eliminar', 'conversiones.eliminar', 'Eliminar conversiones de unidad'),
-(136, 'almacen', 'importar', 'almacen.importar', 'Importar inventario masivo desde Excel');
+(136, 'almacen', 'importar', 'almacen.importar', 'Importar inventario masivo desde Excel'),
+(137, 'mezclas', 'ver', 'mezclas.ver', 'Ver listado de mezclas/fórmulas'),
+(138, 'mezclas', 'crear', 'mezclas.crear', 'Crear nuevas mezclas con su receta'),
+(139, 'mezclas', 'editar', 'mezclas.editar', 'Editar receta de una mezcla'),
+(140, 'mezclas', 'eliminar', 'mezclas.eliminar', 'Eliminar mezclas del sistema'),
+(141, 'mezclas', 'activar', 'mezclas.activar', 'Activar o desactivar una mezcla'),
+(142, 'mezclas', 'aplicar', 'mezclas.aplicar', 'Registrar una aplicación (descuenta stock de la sucursal)'),
+(143, 'mezclas', 'ver_historial', 'mezclas.ver_historial', 'Ver historial de aplicaciones de mezclas');
 
 -- --------------------------------------------------------
 
@@ -517,7 +524,7 @@ CREATE TABLE `plan` (
 
 INSERT INTO `plan` (`id_plan`, `nombre`, `precio_mensual`, `precio_anual`, `max_sucursales`, `max_usuarios`, `max_productos`, `modulos`, `dias_prueba`, `activo`) VALUES
 (1, 'PRUEBA', 0.00, 0.00, 1, 2, 30, '[\"ventas\",\"caja\",\"clientes\",\"inventario\",\"qr\",\"reportes_basicos\",\"roles\"]', 7, 1),
-(2, 'BASICO', 120.00, 1200.00, 1, 3, 50, '[\"ventas\",\"caja\",\"clientes\",\"inventario\",\"reportes_basicos\",\"roles\",\"proveedores\",\"compras\"]', 0, 1),
+(2, 'BASICO', 150.00, 1499.00, 1, 3, 50, '[\"ventas\",\"caja\",\"clientes\",\"inventario\",\"reportes_basicos\",\"roles\",\"proveedores\",\"compras\"]', 0, 1),
 (3, 'ESTANDAR', 250.00, 2500.00, 3, 8, 0, '[\"ventas\",\"caja\",\"clientes\",\"inventario\",\"reportes_basicos\",\"compras\",\"proveedores\",\"traslados\",\"libro_caja\",\"reportes_avanzados\",\"roles\"]', 0, 1),
 (4, 'PREMIUM', 400.00, 4000.00, 0, 0, 0, '[\"ventas\",\"caja\",\"clientes\",\"inventario\",\"qr\",\"reportes_basicos\",\"compras\",\"proveedores\",\"traslados\",\"libro_caja\",\"reportes_avanzados\",\"roles\",\"soporte_prioritario\"]', 0, 1);
 
@@ -641,7 +648,7 @@ CREATE TABLE `super_admin` (
 --
 
 INSERT INTO `super_admin` (`id_admin`, `nombre`, `correo`, `contrasena`, `ultimo_acceso`, `activo`, `creado_en`) VALUES
-(1, 'Administrador SIS-AGRO', 'admin@sisagro.bo', '$2b$10$d4lbs5r6ZzArqhXcfdcyAO8ZyGbZKkJWErP1QhNC1weRpYY/aUmQi', NULL, 1, '2026-06-19 13:38:39');
+(1, 'Administrador SIS-AGRO', 'admin@sisagro.bo', '$2b$10$ZzAFNZsaRVzKSS1sJvYc/ON1mj/cjjcvZ4UHoejornRq4NPk9.WVi', '2026-07-22 06:04:01', 1, '2026-06-19 13:38:39');
 
 -- --------------------------------------------------------
 
@@ -742,6 +749,68 @@ CREATE TABLE `venta` (
   `codepay_voucher` varchar(20) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- --------------------------------------------------------
+
+--
+-- Estructura de tabla para la tabla `mezcla`
+--
+
+CREATE TABLE `mezcla` (
+  `id_mezcla`   int(11)      NOT NULL,
+  `id_empresa`  int(11)      NOT NULL,
+  `nombre`      varchar(150) NOT NULL,
+  `descripcion` text         DEFAULT NULL,
+  `activo`      tinyint(1)   NOT NULL DEFAULT 1,
+  `creado_en`   datetime     NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Estructura de tabla para la tabla `mezcla_ingrediente`
+--
+
+CREATE TABLE `mezcla_ingrediente` (
+  `id_ingrediente` int(11)        NOT NULL,
+  `id_mezcla`      int(11)        NOT NULL,
+  `id_producto`    int(11)        NOT NULL,
+  `cantidad`       decimal(14,4)  NOT NULL,
+  `id_unidad`      int(11)        NOT NULL,
+  `observaciones`  varchar(200)   DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Estructura de tabla para la tabla `aplicacion_mezcla`
+--
+
+CREATE TABLE `aplicacion_mezcla` (
+  `id_aplicacion`    int(11)       NOT NULL,
+  `id_mezcla`        int(11)       NOT NULL,
+  `id_sucursal`      int(11)       NOT NULL,
+  `id_usuario`       int(11)       NOT NULL,
+  `cantidad_tandas`  decimal(10,4) NOT NULL DEFAULT 1.0000,
+  `fecha_aplicacion` datetime      NOT NULL DEFAULT current_timestamp(),
+  `observaciones`    text          DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Estructura de tabla para la tabla `aplicacion_mezcla_detalle`
+--
+
+CREATE TABLE `aplicacion_mezcla_detalle` (
+  `id_detalle`            int(11)       NOT NULL,
+  `id_aplicacion`         int(11)       NOT NULL,
+  `id_lote`               int(11)       NOT NULL,
+  `id_producto`           int(11)       NOT NULL,
+  `cantidad_descontada`   decimal(14,4) NOT NULL,
+  `id_unidad`             int(11)       NOT NULL,
+  `id_movimiento_almacen` int(11)       DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 --
 -- Índices para tablas volcadas
 --
@@ -767,7 +836,7 @@ ALTER TABLE `caja`
 --
 ALTER TABLE `categoria_movimiento`
   ADD PRIMARY KEY (`id_categoria`),
-  ADD UNIQUE KEY `uq_nombre` (`nombre`, `id_empresa`),
+  ADD UNIQUE KEY `uq_nombre` (`nombre`,`id_empresa`),
   ADD KEY `fk_cat_empresa` (`id_empresa`);
 
 --
@@ -775,7 +844,7 @@ ALTER TABLE `categoria_movimiento`
 --
 ALTER TABLE `clasificacion_producto`
   ADD PRIMARY KEY (`id_clasificacion`),
-  ADD UNIQUE KEY `uq_clasificacion_nombre` (`nombre`, `id_empresa`),
+  ADD UNIQUE KEY `uq_clasificacion_nombre` (`nombre`,`id_empresa`),
   ADD KEY `fk_clasprod_empresa` (`id_empresa`);
 
 --
@@ -783,7 +852,7 @@ ALTER TABLE `clasificacion_producto`
 --
 ALTER TABLE `cliente`
   ADD PRIMARY KEY (`id_cliente`),
-  ADD UNIQUE KEY `uq_cliente_cinit` (`ci_nit`, `id_empresa`),
+  ADD UNIQUE KEY `uq_cliente_cinit` (`ci_nit`,`id_empresa`),
   ADD KEY `fk_cli_empresa` (`id_empresa`);
 
 --
@@ -800,7 +869,7 @@ ALTER TABLE `compra`
 --
 ALTER TABLE `conversion_unidad`
   ADD PRIMARY KEY (`id_conversion`),
-  ADD UNIQUE KEY `uq_conv_nombre` (`nombre`, `id_empresa`),
+  ADD UNIQUE KEY `uq_conv_nombre` (`nombre`,`id_empresa`),
   ADD KEY `fk_conv_empresa` (`id_empresa`),
   ADD KEY `fk_conv_unidad_base` (`id_unidad_base`);
 
@@ -842,7 +911,7 @@ ALTER TABLE `lote`
 --
 ALTER TABLE `marca`
   ADD PRIMARY KEY (`id_marca`),
-  ADD UNIQUE KEY `uq_marca_nombre` (`nombre`, `id_empresa`),
+  ADD UNIQUE KEY `uq_marca_nombre` (`nombre`,`id_empresa`),
   ADD KEY `fk_marca_empresa` (`id_empresa`);
 
 --
@@ -923,7 +992,7 @@ ALTER TABLE `producto_fraccion`
 --
 ALTER TABLE `proveedor`
   ADD PRIMARY KEY (`id_proveedor`),
-  ADD UNIQUE KEY `uq_proveedor_nit` (`nit`, `id_empresa`),
+  ADD UNIQUE KEY `uq_proveedor_nit` (`nit`,`id_empresa`),
   ADD KEY `fk_prov_empresa` (`id_empresa`);
 
 --
@@ -975,7 +1044,7 @@ ALTER TABLE `traslado`
 --
 ALTER TABLE `unidad_medida`
   ADD PRIMARY KEY (`id_unidad`),
-  ADD UNIQUE KEY `uq_unidad_abreviatura` (`abreviatura`, `id_empresa`),
+  ADD UNIQUE KEY `uq_unidad_abreviatura` (`abreviatura`,`id_empresa`),
   ADD KEY `fk_unidad_empresa` (`id_empresa`);
 
 --
@@ -998,6 +1067,44 @@ ALTER TABLE `venta`
   ADD KEY `fk_venta_usuario` (`id_usuario`),
   ADD KEY `fk_venta_cliente` (`id_cliente`),
   ADD KEY `fk_venta_apertura` (`id_apertura`);
+
+--
+-- Indices de la tabla `mezcla`
+--
+ALTER TABLE `mezcla`
+  ADD PRIMARY KEY (`id_mezcla`),
+  ADD UNIQUE KEY `uq_mezcla_nombre` (`nombre`,`id_empresa`),
+  ADD KEY `fk_mezcla_empresa` (`id_empresa`);
+
+--
+-- Indices de la tabla `mezcla_ingrediente`
+--
+ALTER TABLE `mezcla_ingrediente`
+  ADD PRIMARY KEY (`id_ingrediente`),
+  ADD UNIQUE KEY `uq_mezcla_prod` (`id_mezcla`,`id_producto`),
+  ADD KEY `fk_mi_mezcla` (`id_mezcla`),
+  ADD KEY `fk_mi_producto` (`id_producto`),
+  ADD KEY `fk_mi_unidad` (`id_unidad`);
+
+--
+-- Indices de la tabla `aplicacion_mezcla`
+--
+ALTER TABLE `aplicacion_mezcla`
+  ADD PRIMARY KEY (`id_aplicacion`),
+  ADD KEY `fk_am_mezcla` (`id_mezcla`),
+  ADD KEY `fk_am_sucursal` (`id_sucursal`),
+  ADD KEY `fk_am_usuario` (`id_usuario`);
+
+--
+-- Indices de la tabla `aplicacion_mezcla_detalle`
+--
+ALTER TABLE `aplicacion_mezcla_detalle`
+  ADD PRIMARY KEY (`id_detalle`),
+  ADD KEY `fk_amd_aplicacion` (`id_aplicacion`),
+  ADD KEY `fk_amd_lote` (`id_lote`),
+  ADD KEY `fk_amd_producto` (`id_producto`),
+  ADD KEY `fk_amd_unidad` (`id_unidad`),
+  ADD KEY `fk_amd_movalmacen` (`id_movimiento_almacen`);
 
 --
 -- AUTO_INCREMENT de las tablas volcadas
@@ -1109,7 +1216,7 @@ ALTER TABLE `pago_venta`
 -- AUTO_INCREMENT de la tabla `permiso`
 --
 ALTER TABLE `permiso`
-  MODIFY `id_permiso` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=137;
+  MODIFY `id_permiso` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=144;
 
 --
 -- AUTO_INCREMENT de la tabla `plan`
@@ -1182,6 +1289,30 @@ ALTER TABLE `usuario`
 --
 ALTER TABLE `venta`
   MODIFY `id_venta` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de la tabla `mezcla`
+--
+ALTER TABLE `mezcla`
+  MODIFY `id_mezcla` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de la tabla `mezcla_ingrediente`
+--
+ALTER TABLE `mezcla_ingrediente`
+  MODIFY `id_ingrediente` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de la tabla `aplicacion_mezcla`
+--
+ALTER TABLE `aplicacion_mezcla`
+  MODIFY `id_aplicacion` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de la tabla `aplicacion_mezcla_detalle`
+--
+ALTER TABLE `aplicacion_mezcla_detalle`
+  MODIFY `id_detalle` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- Restricciones para tablas volcadas
@@ -1372,6 +1503,39 @@ ALTER TABLE `venta`
   ADD CONSTRAINT `fk_venta_cliente` FOREIGN KEY (`id_cliente`) REFERENCES `cliente` (`id_cliente`),
   ADD CONSTRAINT `fk_venta_sucursal` FOREIGN KEY (`id_sucursal`) REFERENCES `sucursal` (`id_sucursal`),
   ADD CONSTRAINT `fk_venta_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuario` (`id_usuario`);
+
+--
+-- Filtros para la tabla `mezcla`
+--
+ALTER TABLE `mezcla`
+  ADD CONSTRAINT `fk_mezcla_empresa` FOREIGN KEY (`id_empresa`) REFERENCES `empresa` (`id_empresa`);
+
+--
+-- Filtros para la tabla `mezcla_ingrediente`
+--
+ALTER TABLE `mezcla_ingrediente`
+  ADD CONSTRAINT `fk_mi_mezcla` FOREIGN KEY (`id_mezcla`) REFERENCES `mezcla` (`id_mezcla`),
+  ADD CONSTRAINT `fk_mi_producto` FOREIGN KEY (`id_producto`) REFERENCES `producto` (`id_producto`),
+  ADD CONSTRAINT `fk_mi_unidad` FOREIGN KEY (`id_unidad`) REFERENCES `unidad_medida` (`id_unidad`);
+
+--
+-- Filtros para la tabla `aplicacion_mezcla`
+--
+ALTER TABLE `aplicacion_mezcla`
+  ADD CONSTRAINT `fk_am_mezcla` FOREIGN KEY (`id_mezcla`) REFERENCES `mezcla` (`id_mezcla`),
+  ADD CONSTRAINT `fk_am_sucursal` FOREIGN KEY (`id_sucursal`) REFERENCES `sucursal` (`id_sucursal`),
+  ADD CONSTRAINT `fk_am_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuario` (`id_usuario`);
+
+--
+-- Filtros para la tabla `aplicacion_mezcla_detalle`
+--
+ALTER TABLE `aplicacion_mezcla_detalle`
+  ADD CONSTRAINT `fk_amd_aplicacion` FOREIGN KEY (`id_aplicacion`) REFERENCES `aplicacion_mezcla` (`id_aplicacion`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_amd_lote` FOREIGN KEY (`id_lote`) REFERENCES `lote` (`id_lote`),
+  ADD CONSTRAINT `fk_amd_producto` FOREIGN KEY (`id_producto`) REFERENCES `producto` (`id_producto`),
+  ADD CONSTRAINT `fk_amd_unidad` FOREIGN KEY (`id_unidad`) REFERENCES `unidad_medida` (`id_unidad`),
+  ADD CONSTRAINT `fk_amd_movalmacen` FOREIGN KEY (`id_movimiento_almacen`) REFERENCES `movimiento_almacen` (`id_movimiento`);
+
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

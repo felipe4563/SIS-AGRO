@@ -12,6 +12,7 @@ import Planes         from './pages/Planes';
 import Suscripciones  from './pages/Suscripciones';
 import Pagos          from './pages/Pagos';
 import Perfil         from './pages/Perfil';
+import Reportes       from './pages/Reportes';
 
 function PageRoute({ children }) {
   return (
@@ -35,6 +36,7 @@ export default function App() {
             <Route path="/suscripciones" element={<PageRoute><Suscripciones /></PageRoute>} />
             <Route path="/pagos"         element={<PageRoute><Pagos /></PageRoute>} />
             <Route path="/perfil"        element={<PageRoute><Perfil /></PageRoute>} />
+            <Route path="/reportes"      element={<PageRoute><Reportes /></PageRoute>} />
             <Route path="*"              element={<Navigate to="/" replace />} />
           </Routes>
         </AdminAuthProvider>

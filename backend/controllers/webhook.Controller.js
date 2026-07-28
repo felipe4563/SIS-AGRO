@@ -11,16 +11,18 @@ const confirmarPago = async (req, res) => {
   const sigHeader = req.headers['x-codepay-signature'];
   const secret    = process.env.CODEPAY_NOTIFICATION_SECRET;
 
-  // Verificar firma (obligatorio en producción)
-  if (secret) {
-    if (!sigHeader) {
-      console.warn('[webhook] Petición sin X-Codepay-Signature rechazada');
-      return res.status(401).json({ error: 'Missing signature' });
-    }
-    if (!verifyWebhookSignature(sigHeader, rawBody, secret)) {
-      console.warn('[webhook] Firma inválida rechazada');
-      return res.status(401).json({ error: 'Invalid signature' });
-    }
+  // Bug #2 fix: firma siempre obligatoria — rechazar si falta la variable de entorno
+  if (!secret) {
+    console.error('[webhook] CODEPAY_NOTIFICATION_SECRET no configurado — petición rechazada');
+    return res.status(500).json({ error: 'Webhook not configured' });
+  }
+  if (!sigHeader) {
+    console.warn('[webhook] Petición sin X-Codepay-Signature rechazada');
+    return res.status(401).json({ error: 'Missing signature' });
+  }
+  if (!verifyWebhookSignature(sigHeader, rawBody, secret)) {
+    console.warn('[webhook] Firma inválida rechazada');
+    return res.status(401).json({ error: 'Invalid signature' });
   }
 
   let data;
@@ -61,19 +63,24 @@ const confirmarPago = async (req, res) => {
       return res.json({ success: true });
     }
 
-    // monto_pagado = net_amount (lo que recibe el comercio) o amount si no viene desglosado
-    const montoPagado = net_amount ? parseFloat(net_amount) : parseFloat(amount);
+    // Bug #7 fix: net_amount != null para no tratar 0 como ausente
+    const montoPagado = net_amount != null ? parseFloat(net_amount) : parseFloat(amount);
 
-    await db.promise().query(
+    // Bug #6 fix: UPDATE atómico con WHERE estado='PENDIENTE' — si otro request ya lo procesó, affectedRows=0
+    const [updateResult] = await db.promise().query(
       `UPDATE venta
-         SET estado         = 'COMPLETADA',
-             codepay_tx_id  = ?,
-             codepay_voucher = ?,
-             monto_pagado   = ?,
-             cambio         = 0
-       WHERE id_venta = ?`,
+         SET estado          = 'COMPLETADA',
+             codepay_tx_id   = ?,
+             codepay_voucher  = ?,
+             monto_pagado    = ?,
+             cambio          = 0
+       WHERE id_venta = ? AND estado = 'PENDIENTE'`,
       [tx_id, voucher_id || null, montoPagado, venta.id_venta]
     );
+    if (updateResult.affectedRows === 0) {
+      console.log(`[webhook] Race condition detectada — venta #${venta.id_venta} ya fue procesada`);
+      return res.json({ success: true });
+    }
 
     console.log(`[webhook] Pago confirmado: venta #${venta.id_venta} | tx_id: ${tx_id} | neto: ${montoPagado}`);
     return res.json({ success: true });

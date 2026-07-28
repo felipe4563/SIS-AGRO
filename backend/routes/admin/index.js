@@ -7,5 +7,6 @@ router.use('/planes',         require('./planes.Routes'));
 router.use('/suscripciones',  require('./suscripciones.Routes'));
 router.use('/pagos',          require('./pagos.Routes'));
 router.use('/perfil',         require('./perfil.Routes'));
+router.use('/reportes',       require('./reportes.Routes'));
 
 module.exports = router;

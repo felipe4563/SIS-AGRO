@@ -25,6 +25,7 @@ const categoriasMovimientoRoutes = require('./routes/categoriasMovimiento.Routes
 const webhookRoutes              = require('./routes/webhook.Routes');
 const setupRoutes                = require('./routes/setup.Routes');
 const creditosRoutes             = require('./routes/creditos.Routes');
+const mezclasRoutes              = require('./routes/mezclas.Routes');
 const { iniciarScheduler } = require('./services/backup.service');
 const app = express();
 
@@ -75,6 +76,7 @@ app.use('/api/categorias-movimiento', categoriasMovimientoRoutes);
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/setup', setupRoutes);
 app.use('/api/creditos', creditosRoutes);
+app.use('/api/mezclas',  mezclasRoutes);
 
 // ── Servidor ──────────────────────────────────────────────────────────────
 if (process.env.NODE_ENV !== 'test') {

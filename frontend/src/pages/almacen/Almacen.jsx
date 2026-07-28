@@ -98,9 +98,9 @@ export default function Almacen() {
   useEffect(() => { if (puedeVerLotes) cargarLotes(); }, [cargarLotes, puedeVerLotes]);
 
   useEffect(() => {
-    if (tab === 'traslados' && puedeTraslados && traslados.length === 0) cargarTraslados();
-    if (tab === 'alertas'   && puedeVerVencimientos && !alertas)          cargarAlertas();
-  }, [tab]);
+    if (tab === 'traslados' && puedeTraslados)    cargarTraslados();
+    if (tab === 'alertas'   && puedeVerVencimientos) cargarAlertas();
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Handlers: Lotes ────────────────────────────────────────────────────────
   const handleNuevaEntrada = async (formData) => {

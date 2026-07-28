@@ -40,6 +40,8 @@ const ICONS = {
     'M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z',
   creditos:
     'M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z',
+  mezclas:
+    'M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15M14.25 3.104c.251.023.501.05.75.082M19.8 15l-1.575 1.575M19.8 15l1.35 1.35m-1.35-1.35L15 19.8m4.8-4.8-1.575 1.575M5 14.5l-1.35 1.35M5 14.5l1.575 1.575',
   importar:
     'M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5',
   logout:
@@ -84,6 +86,7 @@ const MENU_ITEMS = [
   { label: 'Proveedores',        path: '/proveedores',   icon: 'proveedores',   action: 'ver',   subject: 'proveedores',    modulo: 'proveedores' },
   { label: 'Libro de Caja',      path: '/libro-caja',    icon: 'libroCaja',     action: 'ver',   subject: 'movimientos',    modulo: 'libro_caja' },
   { label: 'Créditos',           path: '/creditos',      icon: 'creditos',      action: 'ver',   subject: 'creditos',       modulo: null },
+  { label: 'Mezclas',            path: '/mezclas',       icon: 'mezclas',       action: 'ver',   subject: 'mezclas',        modulo: 'inventario' },
   {
     label: 'Reportes', path: '/reportes', icon: 'reportes', action: null, subject: null,
     modulos: ['reportes_basicos', 'reportes_avanzados'],

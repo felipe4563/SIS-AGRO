@@ -67,7 +67,15 @@ export default function VentaTicket() {
   useEffect(() => {
     if (venta?.estado === 'PENDIENTE' && venta?.metodo_pago === 'QR') {
       setEsperandoPago(true);
+      let intentos = 0;
+      const MAX_INTENTOS = 100; // ~5 minutos a 3s por intento
       pollingRef.current = setInterval(async () => {
+        intentos++;
+        if (intentos >= MAX_INTENTOS) {
+          clearInterval(pollingRef.current);
+          setEsperandoPago(false);
+          return;
+        }
         try {
           const r = await ventaService.obtener(id);
           if (r.data.estado !== 'PENDIENTE') {

@@ -179,7 +179,7 @@ const obtener = async (req, res) => {
       `SELECT d.*, p.nombre as producto_nombre, l.numero_lote
        FROM detalle_venta d
        JOIN producto p ON d.id_producto = p.id_producto
-       JOIN lote l ON d.id_lote = l.id_lote
+       LEFT JOIN lote l ON d.id_lote = l.id_lote
        WHERE d.id_venta = ?`,
       [id]
     );
@@ -209,18 +209,21 @@ const crear = async (req, res) => {
     return res.status(400).json({ error: 'Para ventas a crédito debe seleccionar un cliente.' });
   }
 
-  // Verificar que haya un turno de caja abierto en la sucursal
-  const [turnoAbierto] = await db.promise().query(
-    `SELECT id_apertura FROM apertura_cierre_caja WHERE id_sucursal = ? AND estado = 'ABIERTA' LIMIT 1`,
-    [req.user.id_sucursal]
-  );
-  if (turnoAbierto.length === 0) {
-    return res.status(409).json({ error: 'No hay caja abierta. Abre un turno en el módulo de Caja antes de registrar ventas.' });
-  }
-
   const connection = await db.promise().getConnection();
   try {
     await connection.beginTransaction();
+
+    // Verificar que haya un turno de caja abierto en la sucursal
+    const [turnoAbierto] = await connection.query(
+      `SELECT id_apertura FROM apertura_cierre_caja WHERE id_sucursal = ? AND estado = 'ABIERTA' LIMIT 1`,
+      [req.user.id_sucursal]
+    );
+    if (turnoAbierto.length === 0) {
+      await connection.rollback();
+      connection.release();
+      return res.status(409).json({ error: 'No hay caja abierta. Abre un turno en el módulo de Caja antes de registrar ventas.' });
+    }
+
     const id_venta = await _insertarVentaFIFO(connection, {
       id_sucursal:  req.user.id_sucursal,
       id_usuario:   req.user.id_usuario,
@@ -261,19 +264,21 @@ const iniciarPagoQR = async (req, res) => {
 
   const id_usuario  = req.user.id_usuario;
   const id_sucursal = req.user.id_sucursal;
-
-  const [turnoAbiertoQR] = await db.promise().query(
-    `SELECT id_apertura FROM apertura_cierre_caja WHERE id_sucursal = ? AND estado = 'ABIERTA' LIMIT 1`,
-    [id_sucursal]
-  );
-  if (turnoAbiertoQR.length === 0) {
-    return res.status(409).json({ error: 'No hay caja abierta. Abre un turno en el módulo de Caja antes de registrar ventas.' });
-  }
-
   const order_id = generarOrderId();
   const connection = await db.promise().getConnection();
   try {
     await connection.beginTransaction();
+
+    // Bug #5 fix: turno check dentro del try para que la conexión siempre se libere
+    const [turnoAbiertoQR] = await connection.query(
+      `SELECT id_apertura FROM apertura_cierre_caja WHERE id_sucursal = ? AND estado = 'ABIERTA' LIMIT 1`,
+      [id_sucursal]
+    );
+    if (turnoAbiertoQR.length === 0) {
+      await connection.rollback();
+      connection.release();
+      return res.status(409).json({ error: 'No hay caja abierta. Abre un turno en el módulo de Caja antes de registrar ventas.' });
+    }
 
     const id_venta = await _insertarVentaFIFO(connection, {
       id_sucursal, id_usuario,
@@ -287,9 +292,7 @@ const iniciarPagoQR = async (req, res) => {
       codepay_order_id: order_id,
     });
 
-    await connection.commit();
-
-    // Llamar a CodePay API directa — sin items ni redirects, sin pantalla de CodePay
+    // Bug #1 fix: llamar a CodePay ANTES del commit para que el rollback sea efectivo si falla
     const payload = {
       app_key:     process.env.CODEPAY_PUBLIC_KEY,
       order_id,
@@ -300,13 +303,13 @@ const iniciarPagoQR = async (req, res) => {
     };
 
     const qrData = await generarQR(payload);
-    // qrData: { qr_code, tx_id, amount, net_amount, commission_amount, ... }
 
-    // Guardar el tx_id para poder hacer polling luego
-    await db.promise().query(
+    await connection.query(
       'UPDATE venta SET codepay_tx_id = ? WHERE id_venta = ?',
       [qrData.tx_id, id_venta]
     );
+
+    await connection.commit();
 
     return res.status(201).json({
       id_venta,
@@ -329,7 +332,17 @@ const iniciarPagoQR = async (req, res) => {
 // Consultar estado del pago QR por tx_id (polling desde el frontend)
 const estadoPagoQR = async (req, res) => {
   const { tx_id } = req.params;
+  const id_sucursal = req.user.id_sucursal;
   try {
+    // Bug #3 fix: verificar que el tx_id pertenece a la sucursal del usuario (anti-IDOR)
+    const [rows] = await db.promise().query(
+      'SELECT id_venta FROM venta WHERE codepay_tx_id = ? AND id_sucursal = ? LIMIT 1',
+      [tx_id, id_sucursal]
+    );
+    if (rows.length === 0) {
+      return res.status(403).json({ error: 'Acceso no autorizado a este pago.' });
+    }
+
     const data = await consultarEstadoQR(tx_id);
     return res.json(data);
   } catch (err) {
@@ -395,7 +408,7 @@ const anular = async (req, res) => {
       await connection.query(
         `INSERT INTO movimiento_almacen 
           (id_lote, id_sucursal, id_usuario, tipo, motivo, cantidad_cajas, cantidad_unidades, referencia_id, referencia_tipo)
-         VALUES (?, ?, ?, 'ENTRADA', 'ANULACION DE VENTA', ?, ?, ?, 'ANULACION')`,
+         VALUES (?, ?, ?, 'INGRESO', 'ANULACION DE VENTA', ?, ?, ?, 'ANULACION')`,
         [
           det.id_lote, id_sucursal, id_usuario,
           Math.floor(unidades_a_devolver / loteInfo[0].unidades_por_caja), unidades_a_devolver,

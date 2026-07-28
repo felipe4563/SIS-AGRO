@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import ventaService from '../../services/venta.service';
 import clienteService from '../../services/cliente.service';
 import cajaService from '../../services/caja.service';
@@ -138,6 +138,8 @@ const IconCredito = () => (
 function ModalQR({ qrData, onCompletado, onCancelar }) {
   const [estado, setEstado] = useState('pending'); // pending | completed | failed
   const intervalRef = useRef(null);
+  const onCompletadoRef = useRef(onCompletado);
+  useEffect(() => { onCompletadoRef.current = onCompletado; });
 
   useEffect(() => {
     if (!qrData?.tx_id) return;
@@ -147,7 +149,7 @@ function ModalQR({ qrData, onCompletado, onCancelar }) {
         if (res.data.status === 'completed') {
           clearInterval(intervalRef.current);
           setEstado('completed');
-          setTimeout(() => onCompletado(), 1200);
+          setTimeout(() => onCompletadoRef.current(), 1200);
         } else if (res.data.status === 'failed') {
           clearInterval(intervalRef.current);
           setEstado('failed');
@@ -157,7 +159,7 @@ function ModalQR({ qrData, onCompletado, onCancelar }) {
       }
     }, 3000);
     return () => clearInterval(intervalRef.current);
-  }, [qrData?.tx_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [qrData?.tx_id]);
 
   if (!qrData) return null;
 
@@ -239,8 +241,7 @@ function ModalQR({ qrData, onCompletado, onCancelar }) {
 
 /* ── Componente principal ───────────────────────────────────────────── */
 export default function NuevaVenta() {
-  const navigate       = useNavigate();
-  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { puede } = usePermission();
   const { usuario } = useAuth();
   const tieneQRCodePay = (usuario?.modulos ?? []).includes('qr');
@@ -277,9 +278,6 @@ export default function NuevaVenta() {
   useEffect(() => {
     cargarDatos();
     busquedaRef.current?.focus();
-    if (searchParams.get('qr_failed')) {
-      mostrarToast('error', 'El pago con QR fue cancelado o expiró. Puede intentarlo de nuevo.');
-    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -365,16 +363,18 @@ export default function NuevaVenta() {
     const index = carrito.findIndex(item => item.id_producto === prod.id_producto);
     const precioBase = tipoVenta === 'MAYOR' ? prod.precio_mayor : prod.precio_menor;
     if (index >= 0) {
-      const nuevoCar = [...carrito];
-      const nuevaCant = nuevoCar[index].cantidad + 1;
-      const unidadesReq = calcUnidadesBase(nuevoCar[index], nuevaCant);
+      const itemActual = carrito[index];
+      const nuevaCant = itemActual.cantidad + 1;
+      const unidadesReq = calcUnidadesBase(itemActual, nuevaCant);
       if (!puedeVenderSinStock && unidadesReq > prod.stock_unidades_total) {
         mostrarToast('error', 'No hay suficiente stock disponible');
         return;
       }
-      nuevoCar[index].cantidad = nuevaCant;
-      nuevoCar[index].subtotal = nuevaCant * nuevoCar[index].precio_unitario;
-      setCarrito(nuevoCar);
+      setCarrito(carrito.map((item, i) =>
+        i === index
+          ? { ...item, cantidad: nuevaCant, subtotal: nuevaCant * item.precio_unitario }
+          : item
+      ));
     } else {
       setCarrito([...carrito, {
         id_producto:      prod.id_producto,
@@ -394,41 +394,37 @@ export default function NuevaVenta() {
   };
 
   const actualizarItem = (index, campo, valor) => {
-    const nuevoCar = [...carrito];
+    setCarrito(prev => prev.map((item, i) => {
+      if (i !== index) return item;
 
-    // Cambio de conversión: auto-actualiza precio y limpia tipo_cantidad
-    if (campo === 'id_conversion') {
-      const idConv = valor === '' ? null : parseInt(valor);
-      nuevoCar[index].id_conversion = idConv;
-      const prod = productosStock.find(p => p.id_producto === nuevoCar[index].id_producto);
-      if (idConv && nuevoCar[index].fracciones) {
-        const fracc = nuevoCar[index].fracciones.find(f => f.id_conversion === idConv);
-        if (fracc) {
-          nuevoCar[index].precio_unitario = tipoVenta === 'MAYOR' ? fracc.precio_mayor : fracc.precio_menor;
+      // Cambio de conversión: auto-actualiza precio
+      if (campo === 'id_conversion') {
+        const idConv = valor === '' ? null : parseInt(valor);
+        const prod = productosStock.find(p => p.id_producto === item.id_producto);
+        let nuevoPrecio = item.precio_unitario;
+        if (idConv && item.fracciones) {
+          const fracc = item.fracciones.find(f => f.id_conversion === idConv);
+          if (fracc) nuevoPrecio = tipoVenta === 'MAYOR' ? fracc.precio_mayor : fracc.precio_menor;
+        } else if (prod) {
+          nuevoPrecio = tipoVenta === 'MAYOR' ? prod.precio_mayor : prod.precio_menor;
         }
-      } else if (prod) {
-        nuevoCar[index].precio_unitario = tipoVenta === 'MAYOR' ? prod.precio_mayor : prod.precio_menor;
+        const cant = parseFloat(item.cantidad) || 0;
+        return { ...item, id_conversion: idConv, precio_unitario: nuevoPrecio, subtotal: cant * (parseFloat(nuevoPrecio) || 0) };
       }
-      const cant = parseFloat(nuevoCar[index].cantidad) || 0;
-      nuevoCar[index].subtotal = cant * (parseFloat(nuevoCar[index].precio_unitario) || 0);
-      setCarrito(nuevoCar);
-      return;
-    }
 
-    nuevoCar[index][campo] = valor;
-    if (campo === 'cantidad' || campo === 'precio_unitario') {
-      const cant = parseFloat(nuevoCar[index].cantidad) || 0;
-      const precio = parseFloat(nuevoCar[index].precio_unitario) || 0;
-      const unidadesReq = calcUnidadesBase(nuevoCar[index], cant);
-      if (!puedeVenderSinStock && unidadesReq > nuevoCar[index].stock_maximo) {
-        mostrarToast('error', `Stock disponible: ${nuevoCar[index].stock_maximo} unidades`);
-        nuevoCar[index].cantidad = 1;
-        nuevoCar[index].subtotal = precio;
-      } else {
-        nuevoCar[index].subtotal = cant * precio;
+      const updated = { ...item, [campo]: valor };
+      if (campo === 'cantidad' || campo === 'precio_unitario') {
+        const cant  = parseFloat(updated.cantidad) || 0;
+        const precio = parseFloat(updated.precio_unitario) || 0;
+        const unidadesReq = calcUnidadesBase(updated, cant);
+        if (!puedeVenderSinStock && unidadesReq > updated.stock_maximo) {
+          mostrarToast('error', `Stock disponible: ${updated.stock_maximo} unidades`);
+          return { ...item, cantidad: 1, subtotal: parseFloat(item.precio_unitario) || 0 };
+        }
+        return { ...updated, subtotal: cant * precio };
       }
-    }
-    setCarrito(nuevoCar);
+      return updated;
+    }));
   };
 
   const eliminarDelCarrito = (index) => {
@@ -520,6 +516,8 @@ export default function NuevaVenta() {
         setMontoPagado('');
         setNroFactura('');
         setDescuentoPct('');
+        setDescuentoMonto('');
+        setTipoDescuento('pct');
       }
     } catch (err) {
       mostrarToast('error', err.response?.data?.error || 'Error al procesar la venta');
@@ -949,7 +947,7 @@ export default function NuevaVenta() {
             <svg className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
             </svg>
-            <span>Serás redirigido a CodePay. El cliente escanea el QR y el sistema confirma automáticamente.</span>
+            <span>Se generará un QR en pantalla. El cliente lo escanea con su app bancaria y el sistema confirma el pago automáticamente.</span>
           </div>
         )}
 
@@ -1042,13 +1040,16 @@ export default function NuevaVenta() {
         <ModalQR
           qrData={modalQR}
           onCompletado={() => {
+            const id_venta = modalQR.id_venta;
             setModalQR(null);
             mostrarToast('ok', 'Pago confirmado correctamente');
-            setVentaCompletadaId(modalQR.id_venta);
+            setVentaCompletadaId(id_venta);
             setCarrito([]);
             setMontoPagado('');
             setNroFactura('');
             setDescuentoPct('');
+            setDescuentoMonto('');
+            setTipoDescuento('pct');
           }}
           onCancelar={() => setModalQR(null)}
         />

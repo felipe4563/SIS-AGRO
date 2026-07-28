@@ -1,5 +1,6 @@
 const db     = require('../../config/db');
 const bcrypt = require('bcrypt');
+const { calcularVendedor, calcularAlmacenero } = require('../../utils/permisoSync');
 
 const listar = async (req, res) => {
   try {
@@ -119,12 +120,63 @@ const crear = async (req, res) => {
       await conn.query('INSERT INTO rol_permiso (id_rol, id_permiso) VALUES ?', [values]);
     }
 
-    // 9. Crear usuario administrador con el rol recién creado
-    const hash = await bcrypt.hash(String(contrasena_admin), 10);
+    // 9. Crear sucursal por defecto
+    const [resSucursal] = await conn.query(
+      `INSERT INTO sucursal (id_empresa, nombre, direccion, ciudad, telefono) VALUES (?, ?, ?, ?, ?)`,
+      [id_empresa, 'Sucursal Central', direccion || '', ciudad || '', telefono || null]
+    );
+    const id_sucursal = resSucursal.insertId;
+
+    // 10. Crear caja por defecto en esa sucursal
     await conn.query(
+      `INSERT INTO caja (id_sucursal, nombre) VALUES (?, ?)`,
+      [id_sucursal, 'Caja Principal']
+    );
+
+    // 11. Crear usuario administrador con la sucursal ya asignada
+    const hash = await bcrypt.hash(String(contrasena_admin), 10);
+    const [resUsuario] = await conn.query(
       `INSERT INTO usuario (id_empresa, id_rol, id_sucursal, ci, nombre, apellido, correo, contrasena, activo)
-       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 1)`,
-      [id_empresa, id_rol, ci_admin.trim(), nombre_admin.trim(), apellido_admin.trim(), correo_admin.trim(), hash]
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      [id_empresa, id_rol, id_sucursal, ci_admin.trim(), nombre_admin.trim(), apellido_admin.trim(), correo_admin.trim(), hash]
+    );
+
+    // 12. Crear rol VENDEDOR con permisos según plan
+    const permisosVendedor   = calcularVendedor(modulos);
+    const permisosAlmacenero = calcularAlmacenero(modulos);
+
+    const [todosPermisos] = await conn.query('SELECT id_permiso FROM permiso');
+    const permisosExistentes = new Set(todosPermisos.map(p => p.id_permiso));
+
+    const [resVendedor] = await conn.query(
+      'INSERT INTO rol (id_empresa, nombre) VALUES (?, ?)',
+      [id_empresa, 'VENDEDOR']
+    );
+    const vendedorValidos = permisosVendedor.filter(id => permisosExistentes.has(id));
+    if (vendedorValidos.length > 0) {
+      await conn.query(
+        'INSERT INTO rol_permiso (id_rol, id_permiso) VALUES ?',
+        [vendedorValidos.map(id => [resVendedor.insertId, id])]
+      );
+    }
+
+    // 13. Crear rol ALMACENERO con permisos según plan
+    const [resAlmacenero] = await conn.query(
+      'INSERT INTO rol (id_empresa, nombre) VALUES (?, ?)',
+      [id_empresa, 'ALMACENERO']
+    );
+    const almaceneroValidos = permisosAlmacenero.filter(id => permisosExistentes.has(id));
+    if (almaceneroValidos.length > 0) {
+      await conn.query(
+        'INSERT INTO rol_permiso (id_rol, id_permiso) VALUES ?',
+        [almaceneroValidos.map(id => [resAlmacenero.insertId, id])]
+      );
+    }
+
+    // 14. Marcar setup como completado (no se requiere onboarding)
+    await conn.query(
+      'UPDATE empresa SET setup_completado = 1 WHERE id_empresa = ?',
+      [id_empresa]
     );
 
     await conn.commit();

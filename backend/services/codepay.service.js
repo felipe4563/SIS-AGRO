@@ -70,7 +70,7 @@ async function generarQR(payload) {
 async function consultarEstadoQR(tx_id) {
   const apiUrl = process.env.CODEPAY_API_URL || 'https://payapi.codewave.com.bo/api';
 
-  const res = await fetch(`${apiUrl}/checkout/status/${tx_id}`);
+  const res = await fetch(`${apiUrl}/checkout/status/${encodeURIComponent(tx_id)}`);
 
   if (!res.ok) {
     const text = await res.text();

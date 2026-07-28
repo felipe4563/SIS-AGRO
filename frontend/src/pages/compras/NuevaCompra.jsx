@@ -270,7 +270,7 @@ export default function NuevaCompra() {
                 >
                   <option value="">-- Buscar Producto --</option>
                   {productos.map(p => (
-                    <option key={p.id_producto} value={p.id_producto}>{p.nombre} ({p.codigo_barras || 'S/C'})</option>
+                    <option key={p.id_producto} value={p.id_producto}>{p.nombre}</option>
                   ))}
                 </select>
               </div>

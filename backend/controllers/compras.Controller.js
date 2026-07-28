@@ -134,13 +134,19 @@ const confirmar = async (req, res) => {
   const { id } = req.params;
   const id_usuario = req.user.id_usuario;
 
+  const id_empresa = req.user.id_empresa;
   const connection = await db.promise().getConnection();
 
   try {
     await connection.beginTransaction();
 
-    // 1. Verificar estado actual
-    const [compraRows] = await connection.query('SELECT estado, id_sucursal FROM compra WHERE id_compra = ? FOR UPDATE', [id]);
+    // 1. Verificar estado actual (con verificación de empresa para prevenir IDOR)
+    const [compraRows] = await connection.query(
+      `SELECT c.estado, c.id_sucursal FROM compra c
+       JOIN sucursal s ON c.id_sucursal = s.id_sucursal
+       WHERE c.id_compra = ? AND s.id_empresa = ? FOR UPDATE`,
+      [id, id_empresa]
+    );
     if (compraRows.length === 0) throw new Error('Compra no encontrada');
     if (compraRows[0].estado !== 'PENDIENTE') throw new Error('La compra no está en estado PENDIENTE');
 
@@ -175,13 +181,13 @@ const confirmar = async (req, res) => {
       await connection.query(
         `INSERT INTO movimiento_almacen 
           (id_lote, id_sucursal, id_usuario, tipo, motivo, cantidad_cajas, cantidad_unidades, referencia_id, referencia_tipo)
-         VALUES (?, ?, ?, 'ENTRADA', 'INGRESO POR COMPRA', ?, ?, ?, 'COMPRA')`,
+         VALUES (?, ?, ?, 'INGRESO', 'INGRESO POR COMPRA', ?, ?, ?, 'COMPRA')`,
         [id_lote_nuevo, id_sucursal, id_usuario, det.cantidad_cajas, stock_unidades, id]
       );
     }
 
     // 4. Actualizar estado de la compra
-    await connection.query('UPDATE compra SET estado = "RECIBIDO" WHERE id_compra = ?', [id]);
+    await connection.query('UPDATE compra SET estado = "CONFIRMADA" WHERE id_compra = ?', [id]);
 
     await connection.commit();
     return res.json({ mensaje: 'Compra confirmada. Lotes ingresados al almacén correctamente.' });
@@ -209,8 +215,8 @@ const anular = async (req, res) => {
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Compra no encontrada' });
     
-    if (rows[0].estado === 'RECIBIDO') {
-      return res.status(400).json({ error: 'No se puede anular una compra ya RECIBIDA en esta versión. Debe hacer un ajuste de inventario manual.' });
+    if (rows[0].estado === 'CONFIRMADA') {
+      return res.status(400).json({ error: 'No se puede anular una compra ya CONFIRMADA en esta versión. Debe hacer un ajuste de inventario manual.' });
     }
     
     if (rows[0].estado === 'ANULADA') {

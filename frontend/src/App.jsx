@@ -30,8 +30,8 @@ import LayoutReportes from './pages/reportes/LayoutReportes';
 import Backups        from './pages/backups/Backups';
 import Configuracion from './pages/configuracion/Configuracion';
 import LibroCaja from './pages/libroCaja/LibroCaja';
-import Onboarding from './pages/onboarding/Onboarding';
 import LayoutCreditos from './pages/creditos/LayoutCreditos';
+import Mezclas        from './pages/mezclas/Mezclas';
 
 // Nota: Reportes/Órdenes de salida aún no están integrados aquí.
 
@@ -80,13 +80,6 @@ export default function App() {
             {/* ── Rutas públicas ──────────────────────────────────────── */}
             <Route path="/login"       element={<Login />} />
             <Route path="/sin-permiso" element={<SinPermiso />} />
-
-            {/* ── Onboarding (autenticado, sin sidebar ni permisos) ───── */}
-            <Route path="/onboarding" element={
-              <ProtectedRoute>
-                <Onboarding />
-              </ProtectedRoute>
-            } />
 
             {/* ── Roles y permisos ────────────────────────────────────── */}
             <Route path="/roles" element={
@@ -238,6 +231,13 @@ export default function App() {
             <Route path="/creditos" element={
               <PageRoute action="ver" subject="creditos">
                 <LayoutCreditos />
+              </PageRoute>
+            }/>
+
+            {/* ── Mezclas ────────────────────────────────────────────────── */}
+            <Route path="/mezclas" element={
+              <PageRoute action="ver" subject="mezclas">
+                <Mezclas />
               </PageRoute>
             }/>
 
