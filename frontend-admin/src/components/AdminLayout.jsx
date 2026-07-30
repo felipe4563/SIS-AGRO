@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import AdminSidebar from './AdminSidebar';
+import RecordatorioCorreoRecuperacion from './RecordatorioCorreoRecuperacion';
 import adminApi    from '../api/adminApi';
 
 export default function AdminLayout({ children }) {
@@ -14,6 +15,7 @@ export default function AdminLayout({ children }) {
   return (
     <div className="flex h-screen overflow-hidden bg-gray-100 dark:bg-zinc-950 transition-colors duration-300">
       <AdminSidebar porVencer={porVencer} />
+      <RecordatorioCorreoRecuperacion />
       <main className="flex-1 overflow-y-auto">
         <div className="px-6 py-6 min-h-full">
           {children}

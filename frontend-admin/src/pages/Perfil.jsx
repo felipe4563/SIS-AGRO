@@ -54,7 +54,7 @@ export default function Perfil() {
   const [toast, setToast] = useState(null);
 
   /* ── Datos personales ── */
-  const [datos,       setDatos]       = useState({ nombre: '', correo: '' });
+  const [datos,       setDatos]       = useState({ nombre: '', correo: '', correo_recuperacion: '' });
   const [datosErr,    setDatosErr]    = useState('');
   const [guardandoD,  setGuardandoD]  = useState(false);
 
@@ -67,7 +67,7 @@ export default function Perfil() {
 
   useEffect(() => {
     adminApi.get('/perfil').then(({ data }) => {
-      setDatos({ nombre: data.nombre, correo: data.correo });
+      setDatos({ nombre: data.nombre, correo: data.correo, correo_recuperacion: data.correo_recuperacion || '' });
     }).catch(console.error);
   }, []);
 
@@ -183,6 +183,21 @@ export default function Perfil() {
                 placeholder="tu@correo.com"
                 className={inputCls}
               />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">
+                Correo de recuperación (personal)
+              </label>
+              <input
+                type="email"
+                value={datos.correo_recuperacion}
+                onChange={e => setDatos(d => ({ ...d, correo_recuperacion: e.target.value }))}
+                placeholder="tu-correo-personal@gmail.com"
+                className={inputCls}
+              />
+              <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1.5">
+                Aquí te llegará el código si necesitas recuperar tu contraseña de administrador.
+              </p>
             </div>
             <FieldErr msg={datosErr} />
             <div className="flex justify-end pt-1">
