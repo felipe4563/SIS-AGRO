@@ -9,6 +9,7 @@ import PwaPrompt           from './components/PwaPrompt';
 
 // ── Pages ────────────────────────────────────────────────────────────────
 import Login        from './pages/Login';
+import RecuperarContrasena from './pages/RecuperarContrasena';
 import SinPermiso   from './pages/SinPermiso';
 import Dashboard    from './pages/Dashboard';
 import Roles        from './pages/roles/Roles';
@@ -79,6 +80,7 @@ export default function App() {
 
             {/* ── Rutas públicas ──────────────────────────────────────── */}
             <Route path="/login"       element={<Login />} />
+            <Route path="/recuperar-contrasena" element={<RecuperarContrasena />} />
             <Route path="/sin-permiso" element={<SinPermiso />} />
 
             {/* ── Roles y permisos ────────────────────────────────────── */}

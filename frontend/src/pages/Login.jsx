@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { FaEnvelope, FaLock, FaSpinner, FaEye, FaEyeSlash } from 'react-icons/fa';
 
 import { useAuth }           from '../contexts/AuthContext';
@@ -297,6 +297,15 @@ const Login = () => {
               </button>
             </div>
           </form>
+
+          <div className="mt-4 text-center">
+            <Link
+              to="/recuperar-contrasena"
+              className="text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 hover:underline font-medium"
+            >
+              ¿Olvidaste tu contraseña?
+            </Link>
+          </div>
 
           <div
             className="mt-8 text-center relative z-10"
