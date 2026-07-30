@@ -1,6 +1,8 @@
 const db     = require('../config/db');
 const bcrypt = require('bcrypt');
 const jwt    = require('jsonwebtoken');
+const { crearRateLimiter }    = require('../utils/rateLimiter');
+const passwordResetService    = require('../services/passwordReset.service');
 
 // ── Rate limiting en memoria (5 intentos / 15 min por IP) ────────────────
 const intentosFallidos = new Map();
@@ -134,22 +136,119 @@ const login = (req, res) => {
         return res.json({
           token,
           usuario: {
-            id:               usuario.id_usuario,
-            id_empresa:       usuario.id_empresa,
-            nombre:           usuario.nombre,
-            apellido:         usuario.apellido,
-            correo:           usuario.correo,
-            celular:          usuario.celular,
-            rol:              usuario.id_rol,
-            id_sucursal:      usuario.id_sucursal,
-            rol_nombre:       usuario.rol_nombre,
+            id:                  usuario.id_usuario,
+            id_empresa:          usuario.id_empresa,
+            nombre:              usuario.nombre,
+            apellido:            usuario.apellido,
+            correo:              usuario.correo,
+            correo_recuperacion: usuario.correo_recuperacion,
+            celular:             usuario.celular,
+            rol:                 usuario.id_rol,
+            id_sucursal:         usuario.id_sucursal,
+            rol_nombre:          usuario.rol_nombre,
             permisos,
             modulos,
-            setup_completado: setupCompletado,
+            setup_completado:    setupCompletado,
           },
         });
       });
     });
 };
 
-module.exports = { login };
+// ── Recuperación de contraseña ───────────────────────────────────────────
+const recuperarLimiter = crearRateLimiter({ max: 3, ventanaMs: 15 * 60 * 1000 });
+const MENSAJE_GENERICO = 'Si la cuenta existe, se envió un código a su correo de recuperación.';
+
+async function buscarUsuarioPorIdentificador(identificador) {
+  const [rows] = await db.promise().query(
+    `SELECT id_usuario, nombre, correo_recuperacion FROM usuario WHERE (correo = ? OR ci = ?) AND activo = 1 LIMIT 1`,
+    [identificador, identificador]
+  );
+  return rows[0] || null;
+}
+
+const solicitarRecuperacion = async (req, res) => {
+  const { identificador } = req.body ?? {};
+  if (!identificador?.trim()) {
+    return res.status(400).json({ error: 'Debe indicar su correo o CI' });
+  }
+
+  const clave = identificador.trim().toLowerCase();
+  const { bloqueado, restanteMin } = recuperarLimiter.verificar(clave);
+  if (bloqueado) {
+    return res.status(429).json({ error: `Demasiadas solicitudes. Intenta en ${restanteMin} minuto(s).` });
+  }
+  recuperarLimiter.registrar(clave);
+
+  try {
+    const usuario = await buscarUsuarioPorIdentificador(identificador.trim());
+    if (!usuario) {
+      return res.json({ mensaje: MENSAJE_GENERICO });
+    }
+    if (!usuario.correo_recuperacion) {
+      return res.json({ mensaje: MENSAJE_GENERICO, sin_correo_recuperacion: true });
+    }
+    await passwordResetService.solicitarCodigo({
+      tipoCuenta: 'usuario',
+      idCuenta: usuario.id_usuario,
+      correoRecuperacion: usuario.correo_recuperacion,
+      nombre: usuario.nombre,
+    });
+    return res.json({ mensaje: MENSAJE_GENERICO });
+  } catch (err) {
+    console.error('[solicitarRecuperacion]', err);
+    return res.status(502).json({ error: 'No se pudo enviar el correo. Intenta más tarde.' });
+  }
+};
+
+const verificarCodigoRecuperacion = async (req, res) => {
+  const { identificador, codigo } = req.body ?? {};
+  if (!identificador?.trim() || !codigo?.trim()) {
+    return res.status(400).json({ error: 'Correo/CI y código son requeridos' });
+  }
+  try {
+    const usuario = await buscarUsuarioPorIdentificador(identificador.trim());
+    if (!usuario) {
+      return res.status(400).json({ error: 'Código inválido o expirado' });
+    }
+    const reset_token = await passwordResetService.verificarCodigo({
+      tipoCuenta: 'usuario',
+      idCuenta: usuario.id_usuario,
+      codigo: codigo.trim(),
+    });
+    return res.json({ reset_token });
+  } catch (err) {
+    const status = err.status || 500;
+    console.error('[verificarCodigoRecuperacion]', err);
+    return res.status(status).json({ error: status < 500 ? err.message : 'Error en el servidor' });
+  }
+};
+
+const restablecerContrasena = async (req, res) => {
+  const { reset_token, nueva_contrasena } = req.body ?? {};
+  if (!reset_token || !nueva_contrasena) {
+    return res.status(400).json({ error: 'Faltan datos' });
+  }
+  if (String(nueva_contrasena).trim().length < 6) {
+    return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
+  }
+  try {
+    await passwordResetService.restablecer({
+      tipoCuenta: 'usuario',
+      resetToken: reset_token,
+      nuevaContrasena: nueva_contrasena,
+    });
+    return res.json({ mensaje: 'Contraseña actualizada correctamente' });
+  } catch (err) {
+    const status = err.status || 500;
+    console.error('[restablecerContrasena]', err);
+    return res.status(status).json({ error: status < 500 ? err.message : 'Error en el servidor' });
+  }
+};
+
+module.exports = {
+  login,
+  solicitarRecuperacion,
+  verificarCodigoRecuperacion,
+  restablecerContrasena,
+};
