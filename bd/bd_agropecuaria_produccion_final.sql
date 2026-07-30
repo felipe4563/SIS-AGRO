@@ -178,7 +178,9 @@ CREATE TABLE `detalle_venta` (
   `id_detalle_venta` int(11) NOT NULL,
   `id_venta` int(11) NOT NULL,
   `id_lote` int(11) DEFAULT NULL,
-  `id_producto` int(11) NOT NULL,
+  `id_producto` int(11) DEFAULT NULL,
+  `id_mezcla` int(11) DEFAULT NULL,
+  `id_aplicacion` int(11) DEFAULT NULL,
   `tipo_cantidad` enum('CAJA','UNIDAD') NOT NULL DEFAULT 'UNIDAD',
   `id_conversion` int(11) DEFAULT NULL,
   `cantidad` decimal(14,4) NOT NULL DEFAULT 1.0000,
@@ -756,12 +758,14 @@ CREATE TABLE `venta` (
 --
 
 CREATE TABLE `mezcla` (
-  `id_mezcla`   int(11)      NOT NULL,
-  `id_empresa`  int(11)      NOT NULL,
-  `nombre`      varchar(150) NOT NULL,
-  `descripcion` text         DEFAULT NULL,
-  `activo`      tinyint(1)   NOT NULL DEFAULT 1,
-  `creado_en`   datetime     NOT NULL DEFAULT current_timestamp()
+  `id_mezcla`     int(11)        NOT NULL,
+  `id_empresa`    int(11)        NOT NULL,
+  `nombre`        varchar(150)   NOT NULL,
+  `descripcion`   text           DEFAULT NULL,
+  `precio_mayor`  decimal(12,2)  NOT NULL DEFAULT 0.00,
+  `precio_menor`  decimal(12,2)  NOT NULL DEFAULT 0.00,
+  `activo`        tinyint(1)     NOT NULL DEFAULT 1,
+  `creado_en`     datetime       NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -790,9 +794,11 @@ CREATE TABLE `aplicacion_mezcla` (
   `id_mezcla`        int(11)       NOT NULL,
   `id_sucursal`      int(11)       NOT NULL,
   `id_usuario`       int(11)       NOT NULL,
+  `id_venta`         int(11)       DEFAULT NULL,
   `cantidad_tandas`  decimal(10,4) NOT NULL DEFAULT 1.0000,
   `fecha_aplicacion` datetime      NOT NULL DEFAULT current_timestamp(),
-  `observaciones`    text          DEFAULT NULL
+  `observaciones`    text          DEFAULT NULL,
+  `anulada`          tinyint(1)    NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -862,7 +868,8 @@ ALTER TABLE `compra`
   ADD PRIMARY KEY (`id_compra`),
   ADD KEY `fk_compra_proveedor` (`id_proveedor`),
   ADD KEY `fk_compra_sucursal` (`id_sucursal`),
-  ADD KEY `fk_compra_usuario` (`id_usuario`);
+  ADD KEY `fk_compra_usuario` (`id_usuario`),
+  ADD KEY `idx_compra_sucursal_fecha` (`id_sucursal`,`fecha_compra`);
 
 --
 -- Indices de la tabla `conversion_unidad`
@@ -890,7 +897,9 @@ ALTER TABLE `detalle_venta`
   ADD KEY `fk_dv_venta` (`id_venta`),
   ADD KEY `fk_dv_lote` (`id_lote`),
   ADD KEY `fk_dv_producto` (`id_producto`),
-  ADD KEY `fk_dv_conversion` (`id_conversion`);
+  ADD KEY `fk_dv_conversion` (`id_conversion`),
+  ADD KEY `fk_dv_mezcla` (`id_mezcla`),
+  ADD KEY `fk_dv_aplicacion` (`id_aplicacion`);
 
 --
 -- Indices de la tabla `empresa`
@@ -904,7 +913,8 @@ ALTER TABLE `empresa`
 ALTER TABLE `lote`
   ADD PRIMARY KEY (`id_lote`),
   ADD KEY `fk_lote_producto` (`id_producto`),
-  ADD KEY `fk_lote_sucursal` (`id_sucursal`);
+  ADD KEY `fk_lote_sucursal` (`id_sucursal`),
+  ADD KEY `idx_lote_sucursal_vencimiento` (`id_sucursal`,`fecha_vencimiento`);
 
 --
 -- Indices de la tabla `marca`
@@ -930,7 +940,9 @@ ALTER TABLE `movimiento_almacen`
   ADD PRIMARY KEY (`id_movimiento`),
   ADD KEY `fk_mov_lote` (`id_lote`),
   ADD KEY `fk_mov_sucursal` (`id_sucursal`),
-  ADD KEY `fk_mov_usuario` (`id_usuario`);
+  ADD KEY `fk_mov_usuario` (`id_usuario`),
+  ADD KEY `idx_mov_referencia` (`referencia_tipo`,`referencia_id`),
+  ADD KEY `idx_mov_sucursal_fecha` (`id_sucursal`,`fecha_movimiento`);
 
 --
 -- Indices de la tabla `pago_compra`
@@ -1066,7 +1078,8 @@ ALTER TABLE `venta`
   ADD KEY `fk_venta_sucursal` (`id_sucursal`),
   ADD KEY `fk_venta_usuario` (`id_usuario`),
   ADD KEY `fk_venta_cliente` (`id_cliente`),
-  ADD KEY `fk_venta_apertura` (`id_apertura`);
+  ADD KEY `fk_venta_apertura` (`id_apertura`),
+  ADD KEY `idx_venta_sucursal_fecha` (`id_sucursal`,`fecha_venta`);
 
 --
 -- Indices de la tabla `mezcla`
@@ -1093,7 +1106,8 @@ ALTER TABLE `aplicacion_mezcla`
   ADD PRIMARY KEY (`id_aplicacion`),
   ADD KEY `fk_am_mezcla` (`id_mezcla`),
   ADD KEY `fk_am_sucursal` (`id_sucursal`),
-  ADD KEY `fk_am_usuario` (`id_usuario`);
+  ADD KEY `fk_am_usuario` (`id_usuario`),
+  ADD KEY `fk_am_venta` (`id_venta`);
 
 --
 -- Indices de la tabla `aplicacion_mezcla_detalle`
@@ -1380,7 +1394,18 @@ ALTER TABLE `detalle_venta`
   ADD CONSTRAINT `fk_dv_conversion` FOREIGN KEY (`id_conversion`) REFERENCES `conversion_unidad` (`id_conversion`),
   ADD CONSTRAINT `fk_dv_lote` FOREIGN KEY (`id_lote`) REFERENCES `lote` (`id_lote`),
   ADD CONSTRAINT `fk_dv_producto` FOREIGN KEY (`id_producto`) REFERENCES `producto` (`id_producto`),
-  ADD CONSTRAINT `fk_dv_venta` FOREIGN KEY (`id_venta`) REFERENCES `venta` (`id_venta`);
+  ADD CONSTRAINT `fk_dv_venta` FOREIGN KEY (`id_venta`) REFERENCES `venta` (`id_venta`),
+  ADD CONSTRAINT `fk_dv_mezcla` FOREIGN KEY (`id_mezcla`) REFERENCES `mezcla` (`id_mezcla`),
+  ADD CONSTRAINT `fk_dv_aplicacion` FOREIGN KEY (`id_aplicacion`) REFERENCES `aplicacion_mezcla` (`id_aplicacion`);
+
+--
+-- Una línea de detalle_venta es O producto O mezcla, nunca ambos ni ninguno
+--
+ALTER TABLE `detalle_venta`
+  ADD CONSTRAINT `chk_dv_producto_xor_mezcla` CHECK (
+    (`id_producto` IS NOT NULL AND `id_mezcla` IS NULL) OR
+    (`id_producto` IS NULL AND `id_mezcla` IS NOT NULL)
+  );
 
 --
 -- Filtros para la tabla `lote`
@@ -1524,7 +1549,8 @@ ALTER TABLE `mezcla_ingrediente`
 ALTER TABLE `aplicacion_mezcla`
   ADD CONSTRAINT `fk_am_mezcla` FOREIGN KEY (`id_mezcla`) REFERENCES `mezcla` (`id_mezcla`),
   ADD CONSTRAINT `fk_am_sucursal` FOREIGN KEY (`id_sucursal`) REFERENCES `sucursal` (`id_sucursal`),
-  ADD CONSTRAINT `fk_am_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuario` (`id_usuario`);
+  ADD CONSTRAINT `fk_am_usuario` FOREIGN KEY (`id_usuario`) REFERENCES `usuario` (`id_usuario`),
+  ADD CONSTRAINT `fk_am_venta` FOREIGN KEY (`id_venta`) REFERENCES `venta` (`id_venta`);
 
 --
 -- Filtros para la tabla `aplicacion_mezcla_detalle`
