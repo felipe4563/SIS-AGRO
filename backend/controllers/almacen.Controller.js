@@ -29,13 +29,15 @@ const listarLotes = async (req, res) => {
 
 const obtenerLote = async (req, res) => {
   const { id } = req.params;
+  const id_empresa = req.user.id_empresa;
   try {
     const [loteRows] = await db.promise().query(
       `SELECT l.*, p.nombre as producto_nombre
        FROM lote l
        JOIN producto p ON l.id_producto = p.id_producto
-       WHERE l.id_lote = ?`,
-      [id]
+       JOIN sucursal s ON l.id_sucursal = s.id_sucursal
+       WHERE l.id_lote = ? AND s.id_empresa = ?`,
+      [id, id_empresa]
     );
     if (loteRows.length === 0) return res.status(404).json({ error: 'Lote no encontrado' });
     const lote = loteRows[0];
@@ -65,6 +67,10 @@ const ajusteInventario = async (req, res) => {
   if (nueva_cantidad_unidades === undefined || !motivo) {
     return res.status(400).json({ error: 'Debe especificar la nueva cantidad y el motivo' });
   }
+  const nuevaCantidadNum = parseFloat(nueva_cantidad_unidades);
+  if (isNaN(nuevaCantidadNum) || nuevaCantidadNum < 0) {
+    return res.status(400).json({ error: 'La nueva cantidad debe ser un número mayor o igual a 0' });
+  }
 
   const conn = await db.promise().getConnection();
   try {
@@ -73,19 +79,19 @@ const ajusteInventario = async (req, res) => {
       'SELECT stock_unidades, unidades_por_caja, id_sucursal FROM lote WHERE id_lote = ? FOR UPDATE',
       [id]
     );
-    if (loteInfo.length === 0) throw new Error('Lote no encontrado');
+    if (loteInfo.length === 0) throw Object.assign(new Error('Lote no encontrado'), { status: 404 });
 
     const stockActual = loteInfo[0].stock_unidades;
-    const diferencia = nueva_cantidad_unidades - stockActual;
+    const diferencia = nuevaCantidadNum - stockActual;
     if (diferencia === 0) {
       await conn.rollback();
       return res.json({ mensaje: 'No hay cambios en el inventario' });
     }
 
-    const nuevasCajas = Math.floor(nueva_cantidad_unidades / loteInfo[0].unidades_por_caja);
+    const nuevasCajas = Math.floor(nuevaCantidadNum / loteInfo[0].unidades_por_caja);
     await conn.query(
       'UPDATE lote SET stock_unidades = ?, stock_cajas = ? WHERE id_lote = ?',
-      [nueva_cantidad_unidades, nuevasCajas, id]
+      [nuevaCantidadNum, nuevasCajas, id]
     );
     await conn.query(
       `INSERT INTO movimiento_almacen
@@ -99,7 +105,8 @@ const ajusteInventario = async (req, res) => {
   } catch (err) {
     await conn.rollback();
     console.error('[ajusteInventario]', err);
-    return res.status(500).json({ error: err.message || 'Error al ajustar inventario' });
+    const status = err.status || 500;
+    return res.status(status).json({ error: status < 500 ? err.message : 'Error al ajustar inventario' });
   } finally {
     conn.release();
   }
@@ -146,7 +153,7 @@ const crearLote = async (req, res) => {
   } catch (err) {
     await conn.rollback();
     console.error('[crearLote]', err);
-    return res.status(500).json({ error: err.message || 'Error al crear lote' });
+    return res.status(500).json({ error: 'Error al crear lote' });
   } finally {
     conn.release();
   }
@@ -166,7 +173,7 @@ const darBajaLote = async (req, res) => {
       'SELECT stock_unidades, stock_cajas, id_sucursal FROM lote WHERE id_lote = ? AND activo = 1 FOR UPDATE',
       [id]
     );
-    if (loteRows.length === 0) throw new Error('Lote no encontrado o ya dado de baja');
+    if (loteRows.length === 0) throw Object.assign(new Error('Lote no encontrado o ya dado de baja'), { status: 404 });
 
     const { stock_unidades, stock_cajas, id_sucursal } = loteRows[0];
     if (stock_unidades > 0) {
@@ -186,7 +193,8 @@ const darBajaLote = async (req, res) => {
   } catch (err) {
     await conn.rollback();
     console.error('[darBajaLote]', err);
-    return res.status(500).json({ error: err.message || 'Error al dar de baja el lote' });
+    const status = err.status || 500;
+    return res.status(status).json({ error: status < 500 ? err.message : 'Error al dar de baja el lote' });
   } finally {
     conn.release();
   }
@@ -240,17 +248,17 @@ const crearTraslado = async (req, res) => {
       'SELECT stock_cajas, stock_unidades, id_sucursal FROM lote WHERE id_lote = ? AND activo = 1 FOR UPDATE',
       [id_lote_origen]
     );
-    if (loteRows.length === 0) throw new Error('Lote no encontrado o inactivo');
+    if (loteRows.length === 0) throw Object.assign(new Error('Lote no encontrado o inactivo'), { status: 404 });
 
     const lote = loteRows[0];
     if (lote.id_sucursal === parseInt(id_sucursal_dest)) {
-      throw new Error('La sucursal de destino debe ser diferente a la de origen');
+      throw Object.assign(new Error('La sucursal de destino debe ser diferente a la de origen'), { status: 400 });
     }
     if (cajas > lote.stock_cajas) {
-      throw new Error(`Stock insuficiente. Cajas disponibles: ${lote.stock_cajas}`);
+      throw Object.assign(new Error(`Stock insuficiente. Cajas disponibles: ${lote.stock_cajas}`), { status: 400 });
     }
     if (unidades > lote.stock_unidades) {
-      throw new Error(`Stock insuficiente. Unidades disponibles: ${lote.stock_unidades}`);
+      throw Object.assign(new Error(`Stock insuficiente. Unidades disponibles: ${lote.stock_unidades}`), { status: 400 });
     }
 
     const [result] = await conn.query(
@@ -263,7 +271,8 @@ const crearTraslado = async (req, res) => {
   } catch (err) {
     await conn.rollback();
     console.error('[crearTraslado]', err);
-    return res.status(500).json({ error: err.message || 'Error al crear traslado' });
+    const status = err.status || 500;
+    return res.status(status).json({ error: status < 500 ? err.message : 'Error al crear traslado' });
   } finally {
     conn.release();
   }
@@ -285,7 +294,7 @@ const confirmarTraslado = async (req, res) => {
        FOR UPDATE`,
       [id, id_empresa]
     );
-    if (trasRows.length === 0) throw new Error('Traslado no encontrado o ya procesado');
+    if (trasRows.length === 0) throw Object.assign(new Error('Traslado no encontrado o ya procesado'), { status: 404 });
 
     const t = trasRows[0];
     const [loteRows] = await conn.query(
@@ -295,7 +304,7 @@ const confirmarTraslado = async (req, res) => {
     const lote = loteRows[0];
 
     if (lote.stock_unidades < t.cantidad_unidades || lote.stock_cajas < t.cantidad_cajas) {
-      throw new Error('Stock insuficiente en el lote de origen al momento de confirmar');
+      throw Object.assign(new Error('Stock insuficiente en el lote de origen al momento de confirmar'), { status: 400 });
     }
 
     await conn.query(
@@ -309,8 +318,11 @@ const confirmarTraslado = async (req, res) => {
       [t.id_lote_origen, lote.id_sucursal, id_usuario, t.cantidad_cajas, t.cantidad_unidades, id]
     );
 
+    // numero_lote <=> ? es NULL-safe: solo fusiona con un lote destino que tenga
+    // exactamente el mismo numero_lote (incluyendo el caso NULL = NULL), nunca con
+    // un lote destino sin número solo porque el de origen tampoco lo tuviera especificado distinto.
     const [loteDestRows] = await conn.query(
-      'SELECT id_lote FROM lote WHERE id_producto = ? AND id_sucursal = ? AND activo = 1 AND (numero_lote = ? OR numero_lote IS NULL) LIMIT 1',
+      'SELECT id_lote FROM lote WHERE id_producto = ? AND id_sucursal = ? AND activo = 1 AND numero_lote <=> ? LIMIT 1',
       [lote.id_producto, t.id_sucursal_dest, lote.numero_lote]
     );
 
@@ -346,7 +358,8 @@ const confirmarTraslado = async (req, res) => {
   } catch (err) {
     await conn.rollback();
     console.error('[confirmarTraslado]', err);
-    return res.status(500).json({ error: err.message || 'Error al confirmar traslado' });
+    const status = err.status || 500;
+    return res.status(status).json({ error: status < 500 ? err.message : 'Error al confirmar traslado' });
   } finally {
     conn.release();
   }
@@ -366,14 +379,15 @@ const cancelarTraslado = async (req, res) => {
        FOR UPDATE`,
       [id, id_empresa]
     );
-    if (rows.length === 0) throw new Error('Traslado no encontrado o ya procesado');
+    if (rows.length === 0) throw Object.assign(new Error('Traslado no encontrado o ya procesado'), { status: 404 });
     await conn.query('UPDATE traslado SET estado = "CANCELADO" WHERE id_traslado = ?', [id]);
     await conn.commit();
     return res.json({ mensaje: 'Traslado cancelado correctamente' });
   } catch (err) {
     await conn.rollback();
     console.error('[cancelarTraslado]', err);
-    return res.status(500).json({ error: err.message || 'Error al cancelar traslado' });
+    const status = err.status || 500;
+    return res.status(status).json({ error: status < 500 ? err.message : 'Error al cancelar traslado' });
   } finally {
     conn.release();
   }
@@ -463,14 +477,14 @@ const parseDate = (val) => {
   return null;
 };
 
-const findOrCreate = async (db, table, pkCol, empresa, nombre) => {
+const findOrCreate = async (conn, table, pkCol, empresa, nombre) => {
   const nombreTrim = String(nombre).trim();
-  const [rows] = await db.promise().query(
+  const [rows] = await conn.query(
     `SELECT ${pkCol} FROM \`${table}\` WHERE nombre = ? AND id_empresa = ? LIMIT 1`,
     [nombreTrim, empresa]
   );
   if (rows.length > 0) return { id: rows[0][pkCol], created: false };
-  const [result] = await db.promise().query(
+  const [result] = await conn.query(
     `INSERT INTO \`${table}\` (id_empresa, nombre) VALUES (?, ?)`,
     [empresa, nombreTrim]
   );
@@ -498,134 +512,147 @@ const importarInventario = async (req, res) => {
 
   const resultado = { procesados: 0, lotes_creados: 0, productos_creados: 0, errores: [] };
 
-  for (let i = 0; i < dataRows.length; i++) {
-    const fila = i + 3; // número de fila real en Excel
-    const r    = dataRows[i];
+  const conn = await db.promise().getConnection();
+  try {
+    for (let i = 0; i < dataRows.length; i++) {
+      const fila = i + 3; // número de fila real en Excel
+      const r    = dataRows[i];
 
-    const nombre_producto        = String(r[0]  ?? '').trim();
-    const clasificacion_nombre   = String(r[1]  ?? '').trim();
-    const marca_nombre           = String(r[2]  ?? '').trim();
-    const unidad_nombre          = String(r[3]  ?? '').trim();
-    const precio_mayor           = parseFloat(r[4])  || 0;
-    const precio_menor           = parseFloat(r[5])  || 0;
-    const sucursal_nombre        = String(r[6]  ?? '').trim();
-    const numero_lote            = String(r[7]  ?? '').trim() || null;
-    const fecha_vencimiento      = parseDate(r[8]);
-    const fecha_produccion       = parseDate(r[9]);
-    const fecha_ingreso          = parseDate(r[10]);
-    const cantidad_cajas         = parseInt(r[11]) || 0;
-    const unidades_por_caja      = parseInt(r[12]) || 1;
-    const precio_por_caja        = parseFloat(r[13]) || 0;
-    const stock_cajas            = parseInt(r[14]) || 0;
-    const stock_unidades         = parseInt(r[15]) || 0;
-    const observaciones          = String(r[16] ?? '').trim() || null;
+      const nombre_producto        = String(r[0]  ?? '').trim();
+      const clasificacion_nombre   = String(r[1]  ?? '').trim();
+      const marca_nombre           = String(r[2]  ?? '').trim();
+      const unidad_nombre          = String(r[3]  ?? '').trim();
+      const precio_mayor           = parseFloat(r[4])  || 0;
+      const precio_menor           = parseFloat(r[5])  || 0;
+      const sucursal_nombre        = String(r[6]  ?? '').trim();
+      const numero_lote            = String(r[7]  ?? '').trim() || null;
+      const fecha_vencimiento      = parseDate(r[8]);
+      const fecha_produccion       = parseDate(r[9]);
+      const fecha_ingreso          = parseDate(r[10]);
+      const cantidad_cajas         = parseInt(r[11]) || 0;
+      const unidades_por_caja      = parseInt(r[12]) || 1;
+      const precio_por_caja        = parseFloat(r[13]) || 0;
+      const stock_cajas            = parseInt(r[14]) || 0;
+      const stock_unidades         = parseInt(r[15]) || 0;
+      const observaciones          = String(r[16] ?? '').trim() || null;
 
-    // Validaciones requeridas
-    if (!nombre_producto) {
-      resultado.errores.push({ fila, motivo: 'nombre_producto está vacío' });
-      continue;
-    }
-    if (!sucursal_nombre) {
-      resultado.errores.push({ fila, motivo: 'sucursal está vacía' });
-      continue;
-    }
-    if (!fecha_ingreso) {
-      resultado.errores.push({ fila, motivo: 'fecha_ingreso inválida o vacía (usar DD/MM/AAAA)' });
-      continue;
-    }
+      // Validaciones requeridas
+      if (!nombre_producto) {
+        resultado.errores.push({ fila, motivo: 'nombre_producto está vacío' });
+        continue;
+      }
+      if (!sucursal_nombre) {
+        resultado.errores.push({ fila, motivo: 'sucursal está vacía' });
+        continue;
+      }
+      if (!fecha_ingreso) {
+        resultado.errores.push({ fila, motivo: 'fecha_ingreso inválida o vacía (usar DD/MM/AAAA)' });
+        continue;
+      }
 
-    try {
-      // Buscar sucursal o crearla si no existe
-      const [sucRows] = await db.promise().query(
-        'SELECT id_sucursal FROM sucursal WHERE nombre = ? AND id_empresa = ? LIMIT 1',
-        [sucursal_nombre, id_empresa]
-      );
-      let id_sucursal;
-      if (sucRows.length > 0) {
-        id_sucursal = sucRows[0].id_sucursal;
-      } else {
-        const [sucRes] = await db.promise().query(
-          'INSERT INTO sucursal (id_empresa, nombre, direccion, ciudad, telefono, correo, activo) VALUES (?, ?, ?, ?, ?, ?, 1)',
-          [id_empresa, sucursal_nombre, '', '', '', '']
+      // Cada fila es su propia transacción: si falla a mitad de camino (p.ej. el
+      // INSERT del lote), el producto/marca/clasificación/sucursal creados para
+      // esa misma fila también se revierten, en vez de quedar huérfanos.
+      try {
+        await conn.beginTransaction();
+
+        // Buscar sucursal o crearla si no existe
+        const [sucRows] = await conn.query(
+          'SELECT id_sucursal FROM sucursal WHERE nombre = ? AND id_empresa = ? LIMIT 1',
+          [sucursal_nombre, id_empresa]
         );
-        id_sucursal = sucRes.insertId;
-      }
-
-      // Clasificación (find or create)
-      let id_clasificacion = null;
-      if (clasificacion_nombre) {
-        const cl = await findOrCreate(db, 'clasificacion_producto', 'id_clasificacion', id_empresa, clasificacion_nombre);
-        id_clasificacion = cl.id;
-      }
-
-      // Marca (find or create)
-      let id_marca = null;
-      if (marca_nombre) {
-        const mk = await findOrCreate(db, 'marca', 'id_marca', id_empresa, marca_nombre);
-        id_marca = mk.id;
-      }
-
-      // Unidad de medida (find or create)
-      let id_unidad = null;
-      if (unidad_nombre) {
-        const [uRows] = await db.promise().query(
-          'SELECT id_unidad FROM unidad_medida WHERE nombre = ? AND id_empresa = ? LIMIT 1',
-          [unidad_nombre, id_empresa]
-        );
-        if (uRows.length > 0) {
-          id_unidad = uRows[0].id_unidad;
+        let id_sucursal;
+        if (sucRows.length > 0) {
+          id_sucursal = sucRows[0].id_sucursal;
         } else {
-          const [uRes] = await db.promise().query(
-            'INSERT INTO unidad_medida (id_empresa, nombre, abreviatura) VALUES (?, ?, ?)',
-            [id_empresa, unidad_nombre, unidad_nombre.substring(0, 5)]
+          const [sucRes] = await conn.query(
+            'INSERT INTO sucursal (id_empresa, nombre, direccion, ciudad, telefono, correo, activo) VALUES (?, ?, ?, ?, ?, ?, 1)',
+            [id_empresa, sucursal_nombre, '', '', '', '']
           );
-          id_unidad = uRes.insertId;
+          id_sucursal = sucRes.insertId;
         }
-      }
 
-      // Producto (find or create)
-      const [prodRows] = await db.promise().query(
-        'SELECT id_producto FROM producto WHERE nombre = ? AND id_empresa = ? LIMIT 1',
-        [nombre_producto, id_empresa]
-      );
+        // Clasificación (find or create)
+        let id_clasificacion = null;
+        if (clasificacion_nombre) {
+          const cl = await findOrCreate(conn, 'clasificacion_producto', 'id_clasificacion', id_empresa, clasificacion_nombre);
+          id_clasificacion = cl.id;
+        }
 
-      let id_producto;
-      let producto_creado = false;
+        // Marca (find or create)
+        let id_marca = null;
+        if (marca_nombre) {
+          const mk = await findOrCreate(conn, 'marca', 'id_marca', id_empresa, marca_nombre);
+          id_marca = mk.id;
+        }
 
-      if (prodRows.length > 0) {
-        id_producto = prodRows[0].id_producto;
-      } else {
-        const [prodRes] = await db.promise().query(
-          `INSERT INTO producto
-           (id_empresa, id_clasificacion, id_marca, id_unidad, nombre, precio_mayor, precio_menor,
-            descuento_mayor, descuento_menor, stock_minimo, activo)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 1)`,
-          [id_empresa, id_clasificacion, id_marca, id_unidad, nombre_producto, precio_mayor, precio_menor]
+        // Unidad de medida (find or create)
+        let id_unidad = null;
+        if (unidad_nombre) {
+          const [uRows] = await conn.query(
+            'SELECT id_unidad FROM unidad_medida WHERE nombre = ? AND id_empresa = ? LIMIT 1',
+            [unidad_nombre, id_empresa]
+          );
+          if (uRows.length > 0) {
+            id_unidad = uRows[0].id_unidad;
+          } else {
+            const [uRes] = await conn.query(
+              'INSERT INTO unidad_medida (id_empresa, nombre, abreviatura) VALUES (?, ?, ?)',
+              [id_empresa, unidad_nombre, unidad_nombre.substring(0, 5)]
+            );
+            id_unidad = uRes.insertId;
+          }
+        }
+
+        // Producto (find or create)
+        const [prodRows] = await conn.query(
+          'SELECT id_producto FROM producto WHERE nombre = ? AND id_empresa = ? LIMIT 1',
+          [nombre_producto, id_empresa]
         );
-        id_producto = prodRes.insertId;
-        producto_creado = true;
-        resultado.productos_creados++;
+
+        let id_producto;
+        let productoCreadoEnEstaFila = false;
+
+        if (prodRows.length > 0) {
+          id_producto = prodRows[0].id_producto;
+        } else {
+          const [prodRes] = await conn.query(
+            `INSERT INTO producto
+             (id_empresa, id_clasificacion, id_marca, id_unidad, nombre, precio_mayor, precio_menor,
+              descuento_mayor, descuento_menor, stock_minimo, activo)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 1)`,
+            [id_empresa, id_clasificacion, id_marca, id_unidad, nombre_producto, precio_mayor, precio_menor]
+          );
+          id_producto = prodRes.insertId;
+          productoCreadoEnEstaFila = true;
+        }
+
+        // Crear lote
+        await conn.query(
+          `INSERT INTO lote
+           (id_producto, id_sucursal, numero_lote, fecha_produccion, fecha_vencimiento,
+            fecha_ingreso_almacen, cantidad_cajas, unidades_por_caja, precio_por_caja,
+            stock_cajas, stock_unidades, observaciones, activo)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+          [id_producto, id_sucursal, numero_lote, fecha_produccion, fecha_vencimiento,
+           fecha_ingreso, cantidad_cajas, unidades_por_caja, precio_por_caja,
+           stock_cajas, stock_unidades, observaciones]
+        );
+
+        await conn.commit();
+
+        resultado.procesados++;
+        resultado.lotes_creados++;
+        if (productoCreadoEnEstaFila) resultado.productos_creados++;
+
+      } catch (err) {
+        await conn.rollback();
+        console.error(`[importarInventario] fila ${fila}:`, err.message);
+        resultado.errores.push({ fila, motivo: err.message });
       }
-
-      // Crear lote
-      await db.promise().query(
-        `INSERT INTO lote
-         (id_producto, id_sucursal, numero_lote, fecha_produccion, fecha_vencimiento,
-          fecha_ingreso_almacen, cantidad_cajas, unidades_por_caja, precio_por_caja,
-          stock_cajas, stock_unidades, observaciones, activo)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-        [id_producto, id_sucursal, numero_lote, fecha_produccion, fecha_vencimiento,
-         fecha_ingreso, cantidad_cajas, unidades_por_caja, precio_por_caja,
-         stock_cajas, stock_unidades, observaciones]
-      );
-
-      resultado.procesados++;
-      resultado.lotes_creados++;
-
-    } catch (err) {
-      console.error(`[importarInventario] fila ${fila}:`, err.message);
-      resultado.errores.push({ fila, motivo: err.message });
     }
+  } finally {
+    conn.release();
   }
 
   return res.json(resultado);

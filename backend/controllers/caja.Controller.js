@@ -42,9 +42,24 @@ const crearCaja = async (req, res) => {
 const editarCaja = async (req, res) => {
   const { id } = req.params;
   const { nombre, descripcion, id_sucursal } = req.body;
+  const id_empresa = req.user.id_empresa;
   if (!nombre) return res.status(400).json({ error: 'El nombre es requerido' });
   try {
+    const [cajaRows] = await db.promise().query(
+      `SELECT c.id_caja FROM caja c
+       JOIN sucursal s ON c.id_sucursal = s.id_sucursal
+       WHERE c.id_caja = ? AND s.id_empresa = ?`,
+      [id, id_empresa]
+    );
+    if (cajaRows.length === 0) return res.status(404).json({ error: 'Caja no encontrada' });
+
     const sucursal = id_sucursal || req.user.id_sucursal;
+    const [sucursalRows] = await db.promise().query(
+      'SELECT id_sucursal FROM sucursal WHERE id_sucursal = ? AND id_empresa = ?',
+      [sucursal, id_empresa]
+    );
+    if (sucursalRows.length === 0) return res.status(400).json({ error: 'Sucursal no válida' });
+
     await db.promise().query(
       'UPDATE caja SET nombre = ?, descripcion = ?, id_sucursal = ? WHERE id_caja = ?',
       [nombre.trim(), descripcion || null, sucursal, id]
@@ -58,8 +73,14 @@ const editarCaja = async (req, res) => {
 
 const toggleCaja = async (req, res) => {
   const { id } = req.params;
+  const id_empresa = req.user.id_empresa;
   try {
-    const [rows] = await db.promise().query('SELECT activo FROM caja WHERE id_caja = ?', [id]);
+    const [rows] = await db.promise().query(
+      `SELECT c.activo FROM caja c
+       JOIN sucursal s ON c.id_sucursal = s.id_sucursal
+       WHERE c.id_caja = ? AND s.id_empresa = ?`,
+      [id, id_empresa]
+    );
     if (rows.length === 0) return res.status(404).json({ error: 'Caja no encontrada' });
     const nuevoEstado = rows[0].activo ? 0 : 1;
     await db.promise().query('UPDATE caja SET activo = ? WHERE id_caja = ?', [nuevoEstado, id]);
@@ -120,30 +141,44 @@ const obtenerTurnoActivo = async (req, res) => {
 const abrirCaja = async (req, res) => {
   const { id_caja, monto_inicial, observaciones } = req.body;
   if (!id_caja) return res.status(400).json({ error: 'Debe seleccionar una caja' });
+
+  const conn = await db.promise().getConnection();
   try {
-    const [abiertos] = await db.promise().query(
+    await conn.beginTransaction();
+
+    // Bloquea la fila de la sucursal para serializar aperturas concurrentes
+    // (doble clic / doble pestaña) y evitar dos turnos ABIERTA simultáneos.
+    await conn.query('SELECT id_sucursal FROM sucursal WHERE id_sucursal = ? FOR UPDATE', [req.user.id_sucursal]);
+
+    const [abiertos] = await conn.query(
       `SELECT id_apertura FROM apertura_cierre_caja WHERE id_sucursal = ? AND estado = 'ABIERTA'`,
       [req.user.id_sucursal]
     );
     if (abiertos.length > 0) {
+      await conn.rollback();
       return res.status(400).json({ error: 'Ya existe un turno abierto en esta sucursal. Cierre el turno actual primero.' });
     }
-    const [cajaRows] = await db.promise().query(
+    const [cajaRows] = await conn.query(
       'SELECT id_caja FROM caja WHERE id_caja = ? AND id_sucursal = ? AND activo = 1',
       [id_caja, req.user.id_sucursal]
     );
     if (cajaRows.length === 0) {
+      await conn.rollback();
       return res.status(400).json({ error: 'Caja no válida para esta sucursal' });
     }
-    const [result] = await db.promise().query(
+    const [result] = await conn.query(
       `INSERT INTO apertura_cierre_caja (id_caja, id_usuario, id_sucursal, monto_inicial, observaciones)
        VALUES (?, ?, ?, ?, ?)`,
       [id_caja, req.user.id_usuario, req.user.id_sucursal, parseFloat(monto_inicial) || 0, observaciones || null]
     );
+    await conn.commit();
     return res.status(201).json({ mensaje: 'Turno abierto correctamente', id_apertura: result.insertId });
   } catch (err) {
+    await conn.rollback();
     console.error(err);
     return res.status(500).json({ error: 'Error al abrir turno' });
+  } finally {
+    conn.release();
   }
 };
 

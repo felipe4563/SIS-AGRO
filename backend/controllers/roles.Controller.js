@@ -28,11 +28,12 @@ const listarRoles = (req, res) => {
 
 const obtenerRol = (req, res) => {
   const { id } = req.params;
+  const id_empresa = req.user.id_empresa;
 
-  // Primero verificamos que el rol exista
+  // Primero verificamos que el rol exista y pertenezca a esta empresa
   db.query(
-    'SELECT * FROM rol WHERE id_rol = ?',
-    [id],
+    'SELECT * FROM rol WHERE id_rol = ? AND id_empresa = ?',
+    [id, id_empresa],
     (err, rowsRol) => {
       if (err) {
         console.error('[obtenerRol] rol:', err);
@@ -157,13 +158,14 @@ const crearRol = (req, res) => {
 const editarRol = (req, res) => {
   const { id }    = req.params;
   const { nombre } = req.body;
+  const id_empresa = req.user.id_empresa;
 
   if (!nombre?.trim()) {
     return res.status(400).json({ error: 'El nombre del rol es requerido' });
   }
 
-  // Verificar que el rol exista
-  db.query('SELECT id_rol FROM rol WHERE id_rol = ?', [id], (err, rows) => {
+  // Verificar que el rol exista y pertenezca a esta empresa
+  db.query('SELECT id_rol FROM rol WHERE id_rol = ? AND id_empresa = ?', [id, id_empresa], (err, rows) => {
     if (err) {
       console.error('[editarRol] check:', err);
       return res.status(500).json({ error: 'Error en el servidor' });
@@ -172,10 +174,10 @@ const editarRol = (req, res) => {
       return res.status(404).json({ error: 'Rol no encontrado' });
     }
 
-    // Verificar que el nuevo nombre no lo use otro rol
+    // Verificar que el nuevo nombre no lo use otro rol de la misma empresa
     db.query(
-      'SELECT id_rol FROM rol WHERE nombre = ? AND id_rol != ?',
-      [nombre.trim().toUpperCase(), id],
+      'SELECT id_rol FROM rol WHERE nombre = ? AND id_rol != ? AND id_empresa = ?',
+      [nombre.trim().toUpperCase(), id, id_empresa],
       (errCheck, duplicado) => {
         if (errCheck) {
           console.error('[editarRol] check nombre:', errCheck);
@@ -186,8 +188,8 @@ const editarRol = (req, res) => {
         }
 
         db.query(
-          'UPDATE rol SET nombre = ? WHERE id_rol = ?',
-          [nombre.trim().toUpperCase(), id],
+          'UPDATE rol SET nombre = ? WHERE id_rol = ? AND id_empresa = ?',
+          [nombre.trim().toUpperCase(), id, id_empresa],
           (errUpdate) => {
             if (errUpdate) {
               console.error('[editarRol] update:', errUpdate);
@@ -208,9 +210,10 @@ const editarRol = (req, res) => {
 
 const eliminarRol = (req, res) => {
   const { id } = req.params;
+  const id_empresa = req.user.id_empresa;
 
-  // Verificar que el rol exista
-  db.query('SELECT * FROM rol WHERE id_rol = ?', [id], (err, rows) => {
+  // Verificar que el rol exista y pertenezca a esta empresa
+  db.query('SELECT * FROM rol WHERE id_rol = ? AND id_empresa = ?', [id, id_empresa], (err, rows) => {
     if (err) {
       console.error('[eliminarRol] check:', err);
       return res.status(500).json({ error: 'Error en el servidor' });
@@ -246,8 +249,8 @@ const eliminarRol = (req, res) => {
             }
 
             db.query(
-              'DELETE FROM rol WHERE id_rol = ?',
-              [id],
+              'DELETE FROM rol WHERE id_rol = ? AND id_empresa = ?',
+              [id, id_empresa],
               (errDelRol) => {
                 if (errDelRol) {
                   console.error('[eliminarRol] delete rol:', errDelRol);
@@ -299,13 +302,14 @@ const listarPermisos = (req, res) => {
 const actualizarPermisosRol = (req, res) => {
   const { id }       = req.params;
   const { permisos } = req.body;
+  const id_empresa = req.user.id_empresa;
 
   if (!Array.isArray(permisos)) {
     return res.status(400).json({ error: '"permisos" debe ser un array de IDs' });
   }
 
-  // Verificar que el rol exista
-  db.query('SELECT id_rol FROM rol WHERE id_rol = ?', [id], (err, rows) => {
+  // Verificar que el rol exista y pertenezca a esta empresa
+  db.query('SELECT id_rol FROM rol WHERE id_rol = ? AND id_empresa = ?', [id, id_empresa], (err, rows) => {
     if (err) {
       console.error('[actualizarPermisosRol] check rol:', err);
       return res.status(500).json({ error: 'Error en el servidor' });

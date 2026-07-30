@@ -389,14 +389,20 @@ const estadoPagoQR = async (req, res) => {
 const anular = async (req, res) => {
   const { id } = req.params;
   const id_usuario = req.user.id_usuario;
+  const id_empresa = req.user.id_empresa;
 
   const connection = await db.promise().getConnection();
 
   try {
     await connection.beginTransaction();
 
-    // 1. Validar estado de la venta
-    const [ventaRows] = await connection.query('SELECT estado, id_sucursal FROM venta WHERE id_venta = ? FOR UPDATE', [id]);
+    // 1. Validar estado de la venta (y que pertenezca a esta empresa)
+    const [ventaRows] = await connection.query(
+      `SELECT v.estado, v.id_sucursal FROM venta v
+       JOIN sucursal s ON v.id_sucursal = s.id_sucursal
+       WHERE v.id_venta = ? AND s.id_empresa = ? FOR UPDATE`,
+      [id, id_empresa]
+    );
     if (ventaRows.length === 0) throw new Error('Venta no encontrada');
     if (ventaRows[0].estado === 'ANULADA') throw new Error('La venta ya se encuentra anulada');
 

@@ -69,6 +69,21 @@ const crear = async (req, res) => {
     return res.status(400).json({ error: 'Faltan datos requeridos (proveedor o detalles)' });
   }
 
+  for (const item of detalles) {
+    const cajas = parseFloat(item.cantidad_cajas);
+    const precio = parseFloat(item.precio_por_caja);
+    if (!item.id_producto || isNaN(cajas) || cajas <= 0) {
+      return res.status(400).json({ error: 'Cada detalle debe tener un producto y una cantidad de cajas mayor a 0' });
+    }
+    if (isNaN(precio) || precio < 0) {
+      return res.status(400).json({ error: 'El precio por caja no puede ser negativo' });
+    }
+  }
+  const totalNum = parseFloat(total);
+  if (isNaN(totalNum) || totalNum < 0) {
+    return res.status(400).json({ error: 'El total de la compra no puede ser negativo' });
+  }
+
   const metodoPagoFinal = metodo_pago || 'EFECTIVO';
   const montoPagadoFinal = metodoPagoFinal === 'CREDITO'
     ? parseFloat(monto_pagado || 0)
@@ -147,8 +162,8 @@ const confirmar = async (req, res) => {
        WHERE c.id_compra = ? AND s.id_empresa = ? FOR UPDATE`,
       [id, id_empresa]
     );
-    if (compraRows.length === 0) throw new Error('Compra no encontrada');
-    if (compraRows[0].estado !== 'PENDIENTE') throw new Error('La compra no está en estado PENDIENTE');
+    if (compraRows.length === 0) throw Object.assign(new Error('Compra no encontrada'), { status: 404 });
+    if (compraRows[0].estado !== 'PENDIENTE') throw Object.assign(new Error('La compra no está en estado PENDIENTE'), { status: 400 });
 
     const id_sucursal = compraRows[0].id_sucursal;
 
@@ -195,7 +210,8 @@ const confirmar = async (req, res) => {
   } catch (err) {
     await connection.rollback();
     console.error('Error al confirmar compra:', err);
-    return res.status(500).json({ error: err.message || 'Error al confirmar la compra' });
+    const status = err.status || 500;
+    return res.status(status).json({ error: status < 500 ? err.message : 'Error al confirmar la compra' });
   } finally {
     connection.release();
   }
