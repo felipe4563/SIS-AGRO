@@ -5,6 +5,7 @@ import { ThemeProvider }   from './contexts/ThemeContext';
 import { ConfigProvider }  from './contexts/ConfigContext';
 import ProtectedRoute      from './components/ProtectedRoute';
 import Sidebar             from './components/sidebar';
+import RecordatorioCorreoRecuperacion from './components/RecordatorioCorreoRecuperacion';
 import PwaPrompt           from './components/PwaPrompt';
 
 // ── Pages ────────────────────────────────────────────────────────────────
@@ -44,6 +45,7 @@ function AppLayout({ children }) {
                     bg-gray-100  dark:bg-zinc-950
                     transition-colors duration-300">
       <Sidebar />
+      <RecordatorioCorreoRecuperacion />
       <main className="flex-1 overflow-y-auto
                        bg-gray-100  dark:bg-zinc-950
                        transition-colors duration-300">
