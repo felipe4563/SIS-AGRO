@@ -3,6 +3,7 @@ import reporteService from '../../../services/reporte.service';
 import FiltrosAvanzados from '../components/FiltrosAvanzados';
 import TablaReporte from '../components/TablaReporte';
 import BotonesExportar from '../components/BotonesExportar';
+import { Toast, useToast } from '../../../components/Toast';
 
 function DiferenciaBadge({ valor }) {
   const num = parseFloat(valor || 0);
@@ -34,13 +35,14 @@ export default function VistaCaja() {
   const [resumen, setResumen] = useState(null);
   const [filtros, setFiltros] = useState({ fechaInicio: primerDiaMes, fechaFin: hoy });
   const [cargando, setCargando] = useState(false);
+  const { toast, mostrarToast } = useToast();
 
   // Auto-consulta al cambiar filtros de fechas
   useEffect(() => {
     setCargando(true);
     reporteService.caja(filtros)
       .then(res => { setDatos(res.data.data || []); setResumen(res.data.resumen || {}); })
-      .catch(() => {})
+      .catch(err => { console.error(err); mostrarToast('error', 'No se pudo cargar el reporte de caja'); })
       .finally(() => setCargando(false));
   }, [filtros]);
 
@@ -52,6 +54,7 @@ export default function VistaCaja() {
       setResumen(res.data.resumen || {});
     } catch (err) {
       console.error(err);
+      mostrarToast('error', 'No se pudo cargar el reporte de caja');
     } finally {
       setCargando(false);
     }
@@ -59,6 +62,7 @@ export default function VistaCaja() {
 
   return (
     <div className="space-y-4">
+      <Toast toast={toast} />
       <FiltrosAvanzados
         filtros={filtros}
         setFiltros={setFiltros}

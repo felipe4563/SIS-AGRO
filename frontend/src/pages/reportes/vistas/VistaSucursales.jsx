@@ -5,6 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import FiltrosAvanzados from '../components/FiltrosAvanzados';
 import TablaReporte from '../components/TablaReporte';
 import BotonesExportar from '../components/BotonesExportar';
+import { Toast, useToast } from '../../../components/Toast';
 
 const ESTADO_BADGE = {
   PENDIENTE:   'bg-yellow-100 text-yellow-800 border-yellow-300',
@@ -33,6 +34,7 @@ export default function VistaSucursales() {
   const [resumen, setResumen] = useState(null);
   const [filtros, setFiltros] = useState({ fechaInicio: primerDiaMes, fechaFin: hoy });
   const [cargando, setCargando] = useState(false);
+  const { toast, mostrarToast } = useToast();
 
   // Auto-consulta al cambiar tab o modificar filtros de fechas
   useEffect(() => {
@@ -43,7 +45,7 @@ export default function VistaSucursales() {
       : reporteService.comparativoSucursales(filtros);
     llamada
       .then(res => { setDatos(res.data.data || []); setResumen(res.data.resumen || {}); })
-      .catch(() => {})
+      .catch(err => { console.error(err); mostrarToast('error', 'No se pudo cargar el reporte'); })
       .finally(() => setCargando(false));
   }, [activeTab, filtros]);
 
@@ -60,6 +62,7 @@ export default function VistaSucursales() {
       setResumen(res.data.resumen || {});
     } catch (err) {
       console.error(err);
+      mostrarToast('error', 'No se pudo cargar el reporte');
     } finally {
       setCargando(false);
     }
@@ -100,6 +103,7 @@ export default function VistaSucursales() {
 
   return (
     <div className="space-y-4">
+      <Toast toast={toast} />
       <div className="flex flex-wrap gap-2">
         {tabsPermitidos.map(tab => (
           <button

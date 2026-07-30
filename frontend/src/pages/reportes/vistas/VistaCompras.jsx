@@ -4,6 +4,7 @@ import reporteService from '../../../services/reporte.service';
 import FiltrosAvanzados from '../components/FiltrosAvanzados';
 import TablaReporte from '../components/TablaReporte';
 import BotonesExportar from '../components/BotonesExportar';
+import { Toast, useToast } from '../../../components/Toast';
 
 const hoy          = new Date().toISOString().split('T')[0];
 const primerDiaMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
@@ -27,11 +28,12 @@ export default function VistaCompras() {
   const [filtros, setFiltros] = useState(FILTROS_DEFECTO);
 
   const [catalogos, setCatalogos] = useState({ proveedores: [] });
+  const { toast, mostrarToast } = useToast();
 
   useEffect(() => {
     reporteService.catalogos.proveedores().then(res => {
       setCatalogos({ proveedores: res.data });
-    }).catch(() => {});
+    }).catch(err => console.error('No se pudo cargar el catálogo de proveedores', err));
   }, []);
 
   // Auto-consulta al cambiar tab o modificar filtros de fechas
@@ -40,7 +42,7 @@ export default function VistaCompras() {
     setCargando(true);
     reporteService.compras(activeTab, filtros)
       .then(res => { setDatos(res.data.data || []); setResumen(res.data.resumen || {}); })
-      .catch(() => {})
+      .catch(err => { console.error(err); mostrarToast('error', 'No se pudo cargar el reporte de compras'); })
       .finally(() => setCargando(false));
   }, [activeTab, filtros]);
 
@@ -52,6 +54,7 @@ export default function VistaCompras() {
       setResumen(res.data.resumen || {});
     } catch (err) {
       console.error(err);
+      mostrarToast('error', 'No se pudo cargar el reporte de compras');
     } finally {
       setCargando(false);
     }
@@ -91,6 +94,7 @@ export default function VistaCompras() {
 
   return (
     <div className="space-y-4">
+      <Toast toast={toast} />
       <div className="flex flex-wrap gap-2">
         {tabsPermitidos.map(tab => (
           <button

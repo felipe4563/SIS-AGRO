@@ -9,6 +9,7 @@ export default function DetalleLoteModal({ loteId, onClose }) {
 
   const [lote, setLote] = useState(null);
   const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (loteId) {
@@ -18,11 +19,13 @@ export default function DetalleLoteModal({ loteId, onClose }) {
 
   const cargarDetalle = async () => {
     setCargando(true);
+    setError(null);
     try {
       const res = await almacenService.obtenerLote(loteId);
       setLote(res.data);
     } catch (err) {
       console.error(err);
+      setError('No se pudo cargar el detalle del lote.');
     } finally {
       setCargando(false);
     }
@@ -38,7 +41,21 @@ export default function DetalleLoteModal({ loteId, onClose }) {
     );
   }
 
-  if (!lote) return null;
+  if (error || !lote) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl p-8 flex flex-col items-center gap-4 max-w-sm text-center">
+          <p className="text-red-600 dark:text-red-400 text-sm">{error || 'Lote no encontrado.'}</p>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 rounded-xl text-sm font-medium"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">

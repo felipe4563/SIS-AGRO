@@ -4,6 +4,7 @@ import PageWrapper from '../../components/PageWrapper';
 import compraService from '../../services/compra.service';
 import proveedorService from '../../services/proveedor.service';
 import productoService from '../../services/producto.service';
+import { Toast, useToast } from '../../components/Toast';
 
 export default function NuevaCompra() {
   const navigate = useNavigate();
@@ -13,6 +14,7 @@ export default function NuevaCompra() {
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState(null);
+  const { toast, mostrarToast } = useToast();
 
   // Cabecera
   const [idProveedor, setIdProveedor] = useState('');
@@ -64,7 +66,7 @@ export default function NuevaCompra() {
 
   const agregarItem = () => {
     if (!itemTemp.id_producto || itemTemp.cantidad_cajas <= 0 || itemTemp.precio_por_caja <= 0) {
-      alert('Debe seleccionar un producto y especificar cantidad/precio válidos.');
+      mostrarToast('error', 'Debe seleccionar un producto y especificar cantidad/precio válidos.');
       return;
     }
 
@@ -102,10 +104,10 @@ export default function NuevaCompra() {
   };
 
   const guardarCompra = async () => {
-    if (!idProveedor) return alert('Debe seleccionar un proveedor');
-    if (detalles.length === 0) return alert('Debe agregar al menos un producto a la compra');
+    if (!idProveedor) return mostrarToast('error', 'Debe seleccionar un proveedor');
+    if (detalles.length === 0) return mostrarToast('error', 'Debe agregar al menos un producto a la compra');
     if (metodoPago === 'CREDITO' && !fechaVencimientoCredito) {
-      return alert('Para compras a crédito debe indicar la fecha de vencimiento');
+      return mostrarToast('error', 'Para compras a crédito debe indicar la fecha de vencimiento');
     }
 
     setGuardando(true);
@@ -127,7 +129,7 @@ export default function NuevaCompra() {
       await compraService.crear(payload);
       navigate('/compras', { state: { msg: 'Compra registrada exitosamente' } });
     } catch (err) {
-      alert(err.response?.data?.error || 'Error al guardar la compra');
+      mostrarToast('error', err.response?.data?.error || 'Error al guardar la compra');
     } finally {
       setGuardando(false);
     }
@@ -137,6 +139,7 @@ export default function NuevaCompra() {
 
   return (
     <PageWrapper>
+      <Toast toast={toast} />
       <div className="flex items-center gap-4 mb-6">
         <button
           onClick={() => navigate('/compras')}
