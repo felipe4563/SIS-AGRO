@@ -26,6 +26,7 @@ const webhookRoutes              = require('./routes/webhook.Routes');
 const setupRoutes                = require('./routes/setup.Routes');
 const creditosRoutes             = require('./routes/creditos.Routes');
 const mezclasRoutes              = require('./routes/mezclas.Routes');
+const perfilRoutes               = require('./routes/perfil.Routes');
 const { iniciarScheduler } = require('./services/backup.service');
 const app = express();
 
@@ -57,6 +58,7 @@ app.use('/uploads', express.static(uploadsDir));
 
 // ── Rutas API ─────────────────────────────────────────────────────────────
 app.use('/api/auth',authRoutes);
+app.use('/api/perfil', perfilRoutes);
 app.use('/api/roles', rolesRoutes);
 app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/sucursales', sucursalesRoutes);
