@@ -45,7 +45,7 @@ function AppLayout({ children }) {
       <main className="flex-1 overflow-y-auto
                        bg-gray-100  dark:bg-zinc-950
                        transition-colors duration-300">
-        <div className="pt-16 lg:pt-0 px-4 sm:px-6 py-4 sm:py-6 min-h-full">
+        <div className="pt-16 px-4 sm:px-6 py-4 sm:py-6 min-h-full">
           {children}
         </div>
       </main>

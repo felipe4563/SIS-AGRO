@@ -159,28 +159,8 @@ function MenuItem({ path, label, icon, onClose }) {
   );
 }
 
-// ── Ítem de navegación — modo colapsado (solo icono + tooltip) ────────────
-function MenuItemCollapsed({ path, label, icon, onClose }) {
-  return (
-    <NavLink
-      to={path}
-      onClick={onClose}
-      title={label}
-      className={({ isActive }) =>
-        `flex items-center justify-center w-10 h-10 mx-auto rounded-xl transition-all duration-150 ${
-          isActive
-            ? 'bg-yellow-400 text-zinc-900 shadow-sm'
-            : 'text-zinc-400 dark:text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-white'
-        }`
-      }
-    >
-      <SvgIcon name={icon} className="w-5 h-5" />
-    </NavLink>
-  );
-}
-
 // ── Contenido del sidebar ─────────────────────────────────────────────────
-function SidebarContent({ onClose, collapsed = false }) {
+function SidebarContent({ onClose }) {
   const { usuario, logout } = useAuth();
   const { limpiar }         = useAbilityUpdater();
   const { puede }           = usePermission();
@@ -212,70 +192,6 @@ function SidebarContent({ onClose, collapsed = false }) {
   const iniciales = [usuario?.nombre?.[0], usuario?.apellido?.[0]]
     .filter(Boolean).join('').toUpperCase() || '?';
 
-  // ── MODO COLAPSADO (solo iconos) ────────────────────────────────────────
-  if (collapsed) {
-    return (
-      <div className="flex flex-col h-full bg-white dark:bg-zinc-900
-                      border-r border-zinc-200 dark:border-zinc-800 transition-colors duration-300">
-
-        {/* Logo + plan dot */}
-        <div className="flex flex-col items-center gap-1 py-3 border-b border-zinc-100 dark:border-zinc-800">
-          {configuracion.logo ? (
-            <img
-              src={configuracion.logo}
-              alt={configuracion.nombre_empresa}
-              className="h-8 w-auto object-contain"
-            />
-          ) : (
-            <div className="w-8 h-8 rounded-lg bg-yellow-400 flex items-center justify-center text-xs font-bold text-zinc-900 shrink-0">
-              {(configuracion.nombre_empresa || 'SA').slice(0, 2).toUpperCase()}
-            </div>
-          )}
-          {configuracion.plan_nombre && (
-            <span
-              title={configuracion.plan_nombre}
-              className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"
-            />
-          )}
-        </div>
-
-        {/* Avatar usuario */}
-        <div className="flex justify-center py-3 border-b border-zinc-100 dark:border-zinc-800">
-          <div
-            title={`${usuario?.nombre} ${usuario?.apellido}`}
-            className="w-8 h-8 rounded-lg bg-yellow-400 text-zinc-900 flex items-center justify-center text-xs font-bold cursor-default"
-          >
-            {iniciales}
-          </div>
-        </div>
-
-        {/* Navegación */}
-        <nav className="flex-1 py-2 overflow-y-auto space-y-0.5
-                        scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-700">
-          {itemsVisibles.map((item) => (
-            <MenuItemCollapsed key={item.path} {...item} onClose={onClose} />
-          ))}
-        </nav>
-
-        {/* Footer */}
-        <div className="flex flex-col items-center gap-1 pb-4 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-          <ToggleTema small />
-          <button
-            onClick={handleLogout}
-            title="Cerrar sesión"
-            className="w-10 h-10 flex items-center justify-center rounded-xl mx-auto
-                       text-zinc-400 dark:text-zinc-500 transition-all duration-150
-                       hover:bg-red-50 dark:hover:bg-red-500/10
-                       hover:text-red-600 dark:hover:text-red-400"
-          >
-            <SvgIcon name="logout" className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── MODO COMPLETO ────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-full bg-white dark:bg-zinc-900
                     border-r border-zinc-200 dark:border-zinc-800 transition-colors duration-300">
@@ -382,21 +298,11 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* DESKTOP (>= lg) — sidebar completo con iconos + etiquetas */}
-      <aside className="hidden lg:flex w-60 shrink-0 flex-col h-screen sticky top-0">
-        <SidebarContent />
-      </aside>
-
-      {/* TABLET (md → lg) — sidebar colapsado solo con iconos */}
-      <aside className="hidden md:flex lg:hidden w-[60px] shrink-0 flex-col h-screen sticky top-0">
-        <SidebarContent collapsed />
-      </aside>
-
-      {/* MOBILE (< md) — botón hamburguesa */}
+      {/* Botón hamburguesa — mobile y desktop */}
       <button
         onClick={() => setDrawerAbierto(true)}
         aria-label="Abrir menú"
-        className="md:hidden fixed top-3 left-3 z-40 w-9 h-9
+        className="fixed top-3 left-3 z-40 w-9 h-9
                    flex items-center justify-center rounded-xl
                    bg-white dark:bg-zinc-900
                    border border-zinc-200 dark:border-zinc-700
@@ -408,22 +314,22 @@ export default function Sidebar() {
         </svg>
       </button>
 
-      {/* MOBILE — overlay */}
+      {/* Overlay — mobile y desktop */}
       <div
         onClick={() => setDrawerAbierto(false)}
-        className={`md:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm
+        className={`fixed inset-0 z-40 bg-black/50 backdrop-blur-sm
                     transition-opacity duration-300
                     ${drawerAbierto ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
       />
 
-      {/* MOBILE — drawer (solo iconos en pantalla pequeña) */}
+      {/* Drawer — sidebar completo con iconos + etiquetas */}
       <div
-        className={`md:hidden fixed top-0 left-0 h-full w-[60px] z-50
+        className={`fixed top-0 left-0 h-full w-72 max-w-[85vw] z-50
                     shadow-2xl shadow-black/30
                     transform transition-transform duration-300 ease-in-out
                     ${drawerAbierto ? 'translate-x-0' : '-translate-x-full'}`}
       >
-        <SidebarContent collapsed onClose={() => setDrawerAbierto(false)} />
+        <SidebarContent onClose={() => setDrawerAbierto(false)} />
       </div>
     </>
   );
