@@ -13,6 +13,7 @@ const ICONOS = {
   caja:                   '💰',
   clientes:               '🤝',
   almacen:                '🏚️',
+  mezclas:                '🧪',
   proveedores:            '🚚',
   compras:                '📥',
   traslados:              '🔄',

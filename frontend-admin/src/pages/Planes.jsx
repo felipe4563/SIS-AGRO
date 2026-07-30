@@ -6,6 +6,7 @@ const MODULOS_DISPONIBLES = [
   { key: 'caja',                label: 'Caja',                icon: '💰' },
   { key: 'clientes',            label: 'Clientes',            icon: '👥' },
   { key: 'inventario',          label: 'Inventario',          icon: '📦' },
+  { key: 'mezclas',             label: 'Mezclas / Fórmulas',  icon: '🧪' },
   { key: 'qr',                  label: 'Pagos QR',            icon: '📲' },
   { key: 'reportes_basicos',    label: 'Reportes básicos',    icon: '📊' },
   { key: 'compras',             label: 'Compras',             icon: '🧾' },

@@ -18,6 +18,7 @@ const PLAN_A_PERMISO = {
   caja:               ['caja'],
   clientes:           ['clientes'],
   inventario:         ['almacen'],
+  mezclas:            ['mezclas'],
   proveedores:        ['proveedores'],
   compras:            ['compras', 'creditos'],
   traslados:          ['traslados'],
