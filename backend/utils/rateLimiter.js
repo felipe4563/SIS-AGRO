@@ -25,6 +25,10 @@ function crearRateLimiter({ max, ventanaMs }) {
     } else {
       r.intentos++;
     }
+    // Sweep stale entries so an unauthenticated caller can't grow this Map unbounded.
+    for (const [k, v] of registro) {
+      if (ahora - v.inicio > ventanaMs) registro.delete(k);
+    }
   }
 
   return { verificar, registrar };

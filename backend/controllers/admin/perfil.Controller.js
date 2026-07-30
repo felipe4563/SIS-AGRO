@@ -1,6 +1,7 @@
 const db     = require('../../config/db');
 const bcrypt = require('bcrypt');
 const jwt    = require('jsonwebtoken');
+const { esCorreoValido } = require('../../utils/validarCorreo');
 
 const getPerfil = async (req, res) => {
   try {
@@ -20,6 +21,9 @@ const updatePerfil = async (req, res) => {
   const { nombre, correo, correo_recuperacion } = req.body ?? {};
   if (!nombre?.trim() || !correo?.trim()) {
     return res.status(400).json({ error: 'Nombre y correo son requeridos' });
+  }
+  if (correo_recuperacion?.trim() && !esCorreoValido(correo_recuperacion.trim())) {
+    return res.status(400).json({ error: 'El correo de recuperación no es válido' });
   }
   try {
     const [existing] = await db.promise().query(

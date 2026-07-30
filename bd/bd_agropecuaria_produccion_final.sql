@@ -341,6 +341,24 @@ CREATE TABLE `pago_venta` (
 -- --------------------------------------------------------
 
 --
+-- Estructura de tabla para la tabla `password_reset`
+--
+
+CREATE TABLE `password_reset` (
+  `id_reset` int(11) NOT NULL,
+  `tipo_cuenta` enum('usuario','super_admin') NOT NULL,
+  `id_cuenta` int(11) NOT NULL,
+  `codigo_hash` varchar(64) NOT NULL,
+  `intentos` tinyint(4) NOT NULL DEFAULT 0,
+  `reset_token_hash` varchar(64) DEFAULT NULL,
+  `expira_en` datetime NOT NULL,
+  `usado` tinyint(1) NOT NULL DEFAULT 0,
+  `creado_en` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Estructura de tabla para la tabla `permiso`
 --
 
@@ -639,6 +657,7 @@ CREATE TABLE `super_admin` (
   `id_admin` int(11) NOT NULL,
   `nombre` varchar(100) NOT NULL,
   `correo` varchar(100) NOT NULL,
+  `correo_recuperacion` varchar(150) DEFAULT NULL,
   `contrasena` varchar(255) NOT NULL,
   `ultimo_acceso` datetime DEFAULT NULL,
   `activo` tinyint(1) NOT NULL DEFAULT 1,
@@ -716,6 +735,7 @@ CREATE TABLE `usuario` (
   `apellido` varchar(100) NOT NULL,
   `celular` varchar(20) DEFAULT NULL,
   `correo` varchar(100) DEFAULT NULL,
+  `correo_recuperacion` varchar(150) DEFAULT NULL,
   `contrasena` varchar(255) NOT NULL,
   `activo` tinyint(1) NOT NULL DEFAULT 1,
   `creado_en` datetime NOT NULL DEFAULT current_timestamp()
@@ -966,6 +986,14 @@ ALTER TABLE `pago_venta`
   ADD PRIMARY KEY (`id_pago_venta`),
   ADD KEY `fk_pv_venta` (`id_venta`),
   ADD KEY `fk_pv_usuario` (`id_usuario`);
+
+--
+-- Indices de la tabla `password_reset`
+--
+ALTER TABLE `password_reset`
+  ADD PRIMARY KEY (`id_reset`),
+  ADD KEY `idx_pr_cuenta_vigente` (`tipo_cuenta`,`id_cuenta`,`usado`),
+  ADD KEY `idx_pr_reset_token` (`reset_token_hash`);
 
 --
 -- Indices de la tabla `permiso`
@@ -1225,6 +1253,12 @@ ALTER TABLE `pago_suscripcion`
 --
 ALTER TABLE `pago_venta`
   MODIFY `id_pago_venta` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de la tabla `password_reset`
+--
+ALTER TABLE `password_reset`
+  MODIFY `id_reset` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT de la tabla `permiso`

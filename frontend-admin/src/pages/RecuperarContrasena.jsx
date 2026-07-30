@@ -43,6 +43,7 @@ export default function RecuperarContrasena() {
     if (codigo.trim().length !== 6) return;
     setCargando(true);
     setError('');
+    setMensajeOk('');
     try {
       const { data } = await adminApi.post('/auth/recuperar/verificar', { identificador: correo.trim(), codigo: codigo.trim() });
       setResetToken(data.reset_token);
@@ -57,6 +58,7 @@ export default function RecuperarContrasena() {
   const handleRestablecer = async (e) => {
     e.preventDefault();
     setError('');
+    setMensajeOk('');
     if (nuevaContrasena.length < 6) {
       setError('La contraseña debe tener al menos 6 caracteres');
       return;

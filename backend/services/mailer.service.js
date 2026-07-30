@@ -9,13 +9,21 @@ const transporter = nodemailer.createTransport({
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
+  pool: true,
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 20000,
 });
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 
 function plantillaCodigo(codigo, nombre) {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #18181b;">
       <h2 style="color: #059669; margin-bottom: 4px;">Recuperación de contraseña</h2>
-      <p>Hola ${nombre || ''},</p>
+      <p>Hola ${escapeHtml(nombre || '')},</p>
       <p>Usa el siguiente código para continuar con la recuperación de tu contraseña en SIS-AGRO:</p>
       <p style="font-size: 32px; font-weight: bold; letter-spacing: 8px; text-align: center;
                 background: #f4f4f5; padding: 16px; border-radius: 12px; margin: 20px 0;">

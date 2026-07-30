@@ -37,10 +37,9 @@ async function solicitarCodigo({ tipoCuenta, idCuenta, correoRecuperacion, nombr
     );
 
     codigo = generarCodigo();
-    const expiraEn = new Date(Date.now() + EXPIRA_MIN * 60 * 1000);
     await conn.query(
-      `INSERT INTO password_reset (tipo_cuenta, id_cuenta, codigo_hash, expira_en) VALUES (?, ?, ?, ?)`,
-      [tipoCuenta, idCuenta, hashSha256(codigo), expiraEn]
+      `INSERT INTO password_reset (tipo_cuenta, id_cuenta, codigo_hash, expira_en) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
+      [tipoCuenta, idCuenta, hashSha256(codigo), EXPIRA_MIN]
     );
 
     await conn.commit();
@@ -60,7 +59,7 @@ async function verificarCodigo({ tipoCuenta, idCuenta, codigo }) {
   const [rows] = await db.promise().query(
     `SELECT id_reset, codigo_hash, intentos FROM password_reset
      WHERE tipo_cuenta = ? AND id_cuenta = ? AND usado = 0 AND expira_en > NOW()
-     ORDER BY creado_en DESC LIMIT 1`,
+     ORDER BY id_reset DESC LIMIT 1`,
     [tipoCuenta, idCuenta]
   );
 
@@ -85,8 +84,8 @@ async function verificarCodigo({ tipoCuenta, idCuenta, codigo }) {
 
   const resetToken = crypto.randomBytes(32).toString('hex');
   await db.promise().query(
-    `UPDATE password_reset SET reset_token_hash = ? WHERE id_reset = ?`,
-    [hashSha256(resetToken), fila.id_reset]
+    `UPDATE password_reset SET reset_token_hash = ?, expira_en = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id_reset = ?`,
+    [hashSha256(resetToken), EXPIRA_MIN, fila.id_reset]
   );
 
   return resetToken;
@@ -110,10 +109,15 @@ async function restablecer({ tipoCuenta, resetToken, nuevaContrasena }) {
   const { tabla, columnaId } = tablaYColumna(tipoCuenta);
   const hash = await bcrypt.hash(String(nuevaContrasena), 10);
 
-  await db.promise().query(
+  const [result] = await db.promise().query(
     `UPDATE \`${tabla}\` SET contrasena = ? WHERE \`${columnaId}\` = ?`,
     [hash, fila.id_cuenta]
   );
+  if (result.affectedRows === 0) {
+    const err = new Error('Cuenta no encontrada');
+    err.status = 404;
+    throw err;
+  }
   await db.promise().query(`UPDATE password_reset SET usado = 1 WHERE id_reset = ?`, [fila.id_reset]);
 }
 

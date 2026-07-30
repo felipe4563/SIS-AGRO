@@ -173,7 +173,7 @@ const solicitarRecuperacion = async (req, res) => {
     return res.status(400).json({ error: 'Debe indicar su correo o CI' });
   }
 
-  const clave = identificador.trim().toLowerCase();
+  const clave = identificador.trim().toLowerCase().slice(0, 150);
   const { bloqueado, restanteMin } = recuperarLimiter.verificar(clave);
   if (bloqueado) {
     return res.status(429).json({ error: `Demasiadas solicitudes. Intenta en ${restanteMin} minuto(s).` });

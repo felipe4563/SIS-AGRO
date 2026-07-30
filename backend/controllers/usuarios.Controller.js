@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const bcrypt = require('bcrypt');
+const { esCorreoValido } = require('../utils/validarCorreo');
 
 const listarUsuarios = (req, res) => {
   const id_empresa = req.user.id_empresa;
@@ -69,6 +70,9 @@ const crearUsuario = async (req, res) => {
   }
   if (!contrasena) {
     return res.status(400).json({ error: 'La contraseña es obligatoria' });
+  }
+  if (correoRecuperacionTxt && !esCorreoValido(correoRecuperacionTxt)) {
+    return res.status(400).json({ error: 'El correo de recuperación no es válido' });
   }
 
   try {
@@ -177,6 +181,10 @@ const editarUsuario = async (req, res) => {
   const idRolNum = id_rol === undefined ? undefined : (id_rol === '' || id_rol == null ? null : Number(id_rol));
   const idSucursalNum = id_sucursal === undefined ? undefined : (id_sucursal === '' || id_sucursal == null ? null : Number(id_sucursal));
   const activoNum = activo === undefined ? undefined : (activo === 0 || activo === '0' ? 0 : 1);
+
+  if (correo_recuperacion !== undefined && String(correo_recuperacion ?? '').trim() && !esCorreoValido(String(correo_recuperacion).trim())) {
+    return res.status(400).json({ error: 'El correo de recuperación no es válido' });
+  }
 
   try {
     const [existe] = await db.promise().query(
