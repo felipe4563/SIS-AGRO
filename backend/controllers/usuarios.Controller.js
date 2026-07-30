@@ -11,6 +11,7 @@ const listarUsuarios = (req, res) => {
       u.apellido,
       u.celular,
       u.correo,
+      u.correo_recuperacion,
       u.activo,
       u.id_rol,
       r.nombre AS rol_nombre,
@@ -45,6 +46,7 @@ const crearUsuario = async (req, res) => {
     apellido,
     correo,
     celular,
+    correo_recuperacion,
     contrasena,
     id_rol,
     id_sucursal,
@@ -56,6 +58,7 @@ const crearUsuario = async (req, res) => {
   const apellidoTxt = String(apellido ?? '').trim();
   const correoTxt = normalizarCorreo(correo);
   const celularTxt = celular ? String(celular).trim() : null;
+  const correoRecuperacionTxt = correo_recuperacion ? String(correo_recuperacion).trim() : null;
 
   const idRolNum = id_rol === '' || id_rol == null ? null : Number(id_rol);
   const idSucursalNum = id_sucursal === '' || id_sucursal == null ? null : Number(id_sucursal);
@@ -129,9 +132,9 @@ const crearUsuario = async (req, res) => {
 
     const [result] = await db.promise().query(
       `INSERT INTO usuario
-        (id_empresa, id_rol, id_sucursal, ci, nombre, apellido, celular, correo, contrasena, activo)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id_empresa, idRolNum, Number.isFinite(idSucursalNum) ? idSucursalNum : null, ciTxt, nombreTxt, apellidoTxt, celularTxt, correoTxt, hash, activoNum]
+        (id_empresa, id_rol, id_sucursal, ci, nombre, apellido, celular, correo, correo_recuperacion, contrasena, activo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id_empresa, idRolNum, Number.isFinite(idSucursalNum) ? idSucursalNum : null, ciTxt, nombreTxt, apellidoTxt, celularTxt, correoTxt, correoRecuperacionTxt, hash, activoNum]
     );
 
     return res.status(201).json({
@@ -158,6 +161,7 @@ const editarUsuario = async (req, res) => {
     apellido,
     correo,
     celular,
+    correo_recuperacion,
     contrasena,
     id_rol,
     id_sucursal,
@@ -226,6 +230,10 @@ const editarUsuario = async (req, res) => {
     if (apellidoTxt) { fields.push('apellido = ?'); values.push(apellidoTxt); }
     if (celularTxt !== undefined) { fields.push('celular = ?'); values.push(celularTxt); }
     if (correoTxt !== undefined) { fields.push('correo = ?'); values.push(correoTxt || null); }
+    if (correo_recuperacion !== undefined) {
+      fields.push('correo_recuperacion = ?');
+      values.push(correo_recuperacion ? String(correo_recuperacion).trim() : null);
+    }
     if (idRolNum !== undefined) { fields.push('id_rol = ?'); values.push(idRolNum); }
     if (idSucursalNum !== undefined) { fields.push('id_sucursal = ?'); values.push(idSucursalNum); }
     if (activoNum !== undefined) { fields.push('activo = ?'); values.push(activoNum); }

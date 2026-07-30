@@ -5,7 +5,7 @@ const jwt    = require('jsonwebtoken');
 const getPerfil = async (req, res) => {
   try {
     const [rows] = await db.promise().query(
-      'SELECT id_admin, nombre, correo, ultimo_acceso FROM super_admin WHERE id_admin = ?',
+      'SELECT id_admin, nombre, correo, correo_recuperacion, ultimo_acceso FROM super_admin WHERE id_admin = ?',
       [req.admin.id_admin]
     );
     if (!rows.length) return res.status(404).json({ error: 'Administrador no encontrado' });
@@ -17,7 +17,7 @@ const getPerfil = async (req, res) => {
 };
 
 const updatePerfil = async (req, res) => {
-  const { nombre, correo } = req.body ?? {};
+  const { nombre, correo, correo_recuperacion } = req.body ?? {};
   if (!nombre?.trim() || !correo?.trim()) {
     return res.status(400).json({ error: 'Nombre y correo son requeridos' });
   }
@@ -31,8 +31,8 @@ const updatePerfil = async (req, res) => {
     }
 
     await db.promise().query(
-      'UPDATE super_admin SET nombre = ?, correo = ? WHERE id_admin = ?',
-      [nombre.trim(), correo.trim().toLowerCase(), req.admin.id_admin]
+      'UPDATE super_admin SET nombre = ?, correo = ?, correo_recuperacion = ? WHERE id_admin = ?',
+      [nombre.trim(), correo.trim().toLowerCase(), correo_recuperacion?.trim() || null, req.admin.id_admin]
     );
 
     const token = jwt.sign(
@@ -42,7 +42,12 @@ const updatePerfil = async (req, res) => {
     );
 
     return res.json({
-      admin: { id_admin: req.admin.id_admin, nombre: nombre.trim(), correo: correo.trim().toLowerCase() },
+      admin: {
+        id_admin: req.admin.id_admin,
+        nombre: nombre.trim(),
+        correo: correo.trim().toLowerCase(),
+        correo_recuperacion: correo_recuperacion?.trim() || null,
+      },
       token,
     });
   } catch (err) {
