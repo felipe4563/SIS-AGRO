@@ -6,6 +6,7 @@ import AdminLayout           from './components/AdminLayout';
 
 import Landing        from './pages/Landing';
 import Login          from './pages/Login';
+import RecuperarContrasena from './pages/RecuperarContrasena';
 import Dashboard      from './pages/Dashboard';
 import Empresas       from './pages/Empresas';
 import Planes         from './pages/Planes';
@@ -30,6 +31,7 @@ export default function App() {
           <Routes>
             <Route path="/"              element={<Landing />} />
             <Route path="/login"         element={<Login />} />
+            <Route path="/recuperar-contrasena" element={<RecuperarContrasena />} />
             <Route path="/dashboard"     element={<PageRoute><Dashboard /></PageRoute>} />
             <Route path="/empresas"      element={<PageRoute><Empresas /></PageRoute>} />
             <Route path="/planes"        element={<PageRoute><Planes /></PageRoute>} />

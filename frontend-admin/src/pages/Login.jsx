@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate }        from 'react-router-dom';
+import { useNavigate, Link }  from 'react-router-dom';
 import { useAdminAuth }       from '../contexts/AdminAuthContext';
 
 export default function Login() {
@@ -200,6 +200,12 @@ export default function Login() {
                     }
                   </span>
                 </button>
+              </div>
+
+              <div className="text-center mt-1">
+                <Link to="/recuperar-contrasena" className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+                  ¿Olvidaste tu contraseña?
+                </Link>
               </div>
             </form>
           </div>
