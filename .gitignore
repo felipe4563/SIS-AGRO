@@ -79,3 +79,9 @@ OpenWA/
 package-lock.json
 pnpm-lock.yaml
 yarn.lock
+
+# ===============================
+#   Herramientas locales (Claude Code / superpowers) — solo local
+# ===============================
+.claude/
+docs/
