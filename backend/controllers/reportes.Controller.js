@@ -64,15 +64,16 @@ const obtenerReporteVentas = async (req, res) => {
         `;
         break;
 
-      case 'producto':
+      case 'producto': {
         // En producto, requerimos un JOIN adicional
         let productoWhere = whereClause;
+        let productoParams = params.slice();
         if (id_producto) {
           productoWhere += ` AND d.id_producto = ?`;
-          params.push(id_producto);
+          productoParams.push(id_producto);
         }
-        
-        query = `
+
+        const productoQuery = `
           SELECT p.id_producto, p.nombre,
                  SUM(
                    CASE WHEN d.tipo_cantidad = 'CAJA' THEN d.cantidad * l.unidades_por_caja ELSE d.cantidad END
@@ -84,9 +85,28 @@ const obtenerReporteVentas = async (req, res) => {
           JOIN lote l ON d.id_lote = l.id_lote
           WHERE ${productoWhere}
           GROUP BY p.id_producto, p.nombre
-          ORDER BY total_generado DESC
         `;
+
+        if (id_producto) {
+          // Filtro por un producto específico: las mezclas no aplican aquí, se omiten
+          query = `${productoQuery} ORDER BY total_generado DESC`;
+          params = productoParams;
+        } else {
+          const mezclaQuery = `
+            SELECT mz.id_mezcla as id_producto, mz.nombre,
+                   SUM(d.cantidad) as unidades_vendidas,
+                   SUM(d.subtotal) as total_generado
+            FROM detalle_venta d
+            JOIN venta v ON d.id_venta = v.id_venta
+            JOIN mezcla mz ON d.id_mezcla = mz.id_mezcla
+            WHERE ${whereClause}
+            GROUP BY mz.id_mezcla, mz.nombre
+          `;
+          query = `(${productoQuery}) UNION ALL (${mezclaQuery}) ORDER BY total_generado DESC`;
+          params = [...productoParams, ...params];
+        }
         break;
+      }
 
       case 'cliente':
         query = `
@@ -376,7 +396,7 @@ const obtenerTopProductos = async (req, res) => {
       if (ck.length > 0) sucursalId = id_sucursal;
     }
     const [rows] = await db.promise().query(`
-      SELECT p.id_producto, p.nombre,
+      (SELECT p.id_producto, p.nombre,
         SUM(CASE WHEN d.tipo_cantidad = 'CAJA' THEN d.cantidad * l.unidades_por_caja ELSE d.cantidad END) as unidades_vendidas,
         SUM(d.subtotal) as ingresos_generados
       FROM detalle_venta d
@@ -384,9 +404,18 @@ const obtenerTopProductos = async (req, res) => {
       JOIN producto p ON d.id_producto = p.id_producto
       JOIN lote l ON d.id_lote = l.id_lote
       WHERE v.estado = 'COMPLETADA' AND v.id_sucursal = ?
-      GROUP BY p.id_producto, p.nombre
+      GROUP BY p.id_producto, p.nombre)
+      UNION ALL
+      (SELECT mz.id_mezcla as id_producto, mz.nombre,
+        SUM(d.cantidad) as unidades_vendidas,
+        SUM(d.subtotal) as ingresos_generados
+      FROM detalle_venta d
+      JOIN venta v ON d.id_venta = v.id_venta
+      JOIN mezcla mz ON d.id_mezcla = mz.id_mezcla
+      WHERE v.estado = 'COMPLETADA' AND v.id_sucursal = ?
+      GROUP BY mz.id_mezcla, mz.nombre)
       ORDER BY ${orderColumn} DESC LIMIT 10
-    `, [sucursalId]);
+    `, [sucursalId, sucursalId]);
 
     return res.json(rows);
   } catch (err) {
@@ -433,7 +462,7 @@ const obtenerReporteGananciasProducto = async (req, res) => {
     }
 
     const query = `
-      SELECT p.id_producto, p.nombre,
+      (SELECT p.id_producto, p.nombre,
         SUM(CASE WHEN dv.tipo_cantidad = 'CAJA' THEN dv.cantidad * l.unidades_por_caja ELSE dv.cantidad END) as unidades_vendidas,
         SUM(dv.subtotal) as total_ingresos,
         SUM(CASE WHEN dv.tipo_cantidad = 'CAJA'
@@ -449,11 +478,28 @@ const obtenerReporteGananciasProducto = async (req, res) => {
       JOIN producto p ON dv.id_producto = p.id_producto
       JOIN lote l ON dv.id_lote = l.id_lote
       WHERE ${whereClause}
-      GROUP BY p.id_producto, p.nombre
+      GROUP BY p.id_producto, p.nombre)
+      UNION ALL
+      (SELECT mz.id_mezcla as id_producto, mz.nombre,
+        SUM(dv.cantidad) as unidades_vendidas,
+        SUM(dv.subtotal) as total_ingresos,
+        SUM(COALESCE(costo_mezcla.costo_ingredientes, 0)) as costo_total,
+        SUM(dv.subtotal) - SUM(COALESCE(costo_mezcla.costo_ingredientes, 0)) as ganancia_bruta
+      FROM detalle_venta dv
+      JOIN venta v ON dv.id_venta = v.id_venta
+      JOIN mezcla mz ON dv.id_mezcla = mz.id_mezcla
+      LEFT JOIN (
+        SELECT amd.id_aplicacion, SUM(amd.cantidad_descontada * (l2.precio_por_caja / l2.unidades_por_caja)) as costo_ingredientes
+        FROM aplicacion_mezcla_detalle amd
+        JOIN lote l2 ON amd.id_lote = l2.id_lote
+        GROUP BY amd.id_aplicacion
+      ) costo_mezcla ON dv.id_aplicacion = costo_mezcla.id_aplicacion
+      WHERE ${whereClause}
+      GROUP BY mz.id_mezcla, mz.nombre)
       ORDER BY ganancia_bruta DESC
     `;
 
-    const [rows] = await db.promise().query(query, params);
+    const [rows] = await db.promise().query(query, [...params, ...params]);
     const resumen = {
       total_registros: rows.length,
       total_ingresos: rows.reduce((a, r) => a + parseFloat(r.total_ingresos || 0), 0),
@@ -538,11 +584,17 @@ const obtenerReporteComparativoSucursales = async (req, res) => {
             THEN dv.cantidad * l.precio_por_caja
             ELSE dv.cantidad * (l.precio_por_caja / l.unidades_por_caja)
           END
-        ), 0) as ganancia_bruta
+        ), 0) - COALESCE(SUM(costo_mezcla.costo_ingredientes), 0) as ganancia_bruta
       FROM sucursal s
       LEFT JOIN venta v ON s.id_sucursal = v.id_sucursal AND ${ventaJoinWhere}
       LEFT JOIN detalle_venta dv ON v.id_venta = dv.id_venta
       LEFT JOIN lote l ON dv.id_lote = l.id_lote
+      LEFT JOIN (
+        SELECT amd.id_aplicacion, SUM(amd.cantidad_descontada * (l2.precio_por_caja / l2.unidades_por_caja)) as costo_ingredientes
+        FROM aplicacion_mezcla_detalle amd
+        JOIN lote l2 ON amd.id_lote = l2.id_lote
+        GROUP BY amd.id_aplicacion
+      ) costo_mezcla ON dv.id_aplicacion = costo_mezcla.id_aplicacion
       WHERE s.activo = 1 AND s.id_empresa = ?
       GROUP BY s.id_sucursal, s.nombre, s.ciudad
       ORDER BY total_ingresos DESC
