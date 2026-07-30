@@ -33,6 +33,7 @@ import Configuracion from './pages/configuracion/Configuracion';
 import LibroCaja from './pages/libroCaja/LibroCaja';
 import LayoutCreditos from './pages/creditos/LayoutCreditos';
 import Mezclas        from './pages/mezclas/Mezclas';
+import MiPerfil        from './pages/MiPerfil';
 
 // Nota: Reportes/Órdenes de salida aún no están integrados aquí.
 
@@ -256,6 +257,15 @@ export default function App() {
                 <Dashboard />
               </PageRoute>
             }/>
+
+            {/* ── Mi Perfil ──────────────────────────────────────────── */}
+            <Route path="/mi-perfil" element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <MiPerfil />
+                </AppLayout>
+              </ProtectedRoute>
+            } />
 
 
             {/* ── Rutas desconocidas ──────────────────────────────────── */}

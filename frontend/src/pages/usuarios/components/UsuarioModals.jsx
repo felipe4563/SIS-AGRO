@@ -19,6 +19,7 @@ export function ModalCrearEditar({
     apellido: '',
     correo: '',
     celular: '',
+    correo_recuperacion: '',
     contrasena: '',
     id_rol: '',
     id_sucursal: ''
@@ -32,6 +33,7 @@ export function ModalCrearEditar({
         apellido: usuario.apellido || '',
         correo: usuario.correo || '',
         celular: usuario.celular || '',
+        correo_recuperacion: usuario.correo_recuperacion || '',
         contrasena: '', // se deja vacío al editar
         id_rol: usuario.id_rol || '',
         id_sucursal: usuario.id_sucursal || ''
@@ -140,6 +142,21 @@ export function ModalCrearEditar({
                 onChange={handleChange}
                 className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 outline-none transition-all"
                 placeholder="71234567"
+              />
+            </div>
+
+            {/* Correo de recuperación */}
+            <div>
+              <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">
+                Correo de Recuperación
+              </label>
+              <input
+                type="email"
+                name="correo_recuperacion"
+                value={formData.correo_recuperacion}
+                onChange={handleChange}
+                className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 outline-none transition-all"
+                placeholder="personal@gmail.com"
               />
             </div>
 
