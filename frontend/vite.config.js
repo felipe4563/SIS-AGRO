@@ -56,6 +56,13 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api\//],   // las llamadas API no usan fallback
 
         runtimeCaching: [
+          // ── Estado en tiempo real (caja/turno): siempre red, nunca caché ───
+          // Una respuesta vieja de este endpoint bloquea ventas aunque ya
+          // haya turno abierto y haya conexión — no puede servirse de caché.
+          {
+            urlPattern: /^https?:\/\/.*\/api\/caja\/turno-activo/i,
+            handler:    'NetworkOnly',
+          },
           // ── API: Network-first, caché de respaldo 24h ─────────────────────
           {
             urlPattern: /^https?:\/\/.*\/api\//i,
