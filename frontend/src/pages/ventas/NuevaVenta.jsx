@@ -250,6 +250,7 @@ export default function NuevaVenta() {
   const [productosStock, setProductosStock] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [turnoActivo, setTurnoActivo] = useState(undefined); // undefined = cargando, null = sin turno
+  const [errorTurno, setErrorTurno] = useState(null); // mensaje real si falló la consulta del turno (no confundir con "sin turno")
   const [guardando, setGuardando] = useState(false);
   const [toast, setToast] = useState(null);
   const [ventaCompletadaId, setVentaCompletadaId] = useState(null);
@@ -321,14 +322,21 @@ export default function NuevaVenta() {
   };
 
   const cargarDatos = async () => {
-    try {
-      const [cliRes, posRes, turnoRes] = await Promise.all([
-        clienteService.listar(),
-        ventaService.listarProductosPOS(),
-        cajaService.obtenerTurnoActivo(),
-      ]);
-      setClientes(cliRes.data.filter(c => c.activo === 1));
-      setProductosStock(posRes.data.map(p => p.tipo === 'MEZCLA'
+    setErrorTurno(null);
+    const [cliRes, posRes, turnoRes] = await Promise.allSettled([
+      clienteService.listar(),
+      ventaService.listarProductosPOS(),
+      cajaService.obtenerTurnoActivo(),
+    ]);
+
+    if (cliRes.status === 'fulfilled') {
+      setClientes(cliRes.value.data.filter(c => c.activo === 1));
+    } else {
+      mostrarToast('error', cliRes.reason?.response?.data?.error || 'Error al cargar clientes');
+    }
+
+    if (posRes.status === 'fulfilled') {
+      setProductosStock(posRes.value.data.map(p => p.tipo === 'MEZCLA'
         ? {
             ...p,
             precio_menor: parseFloat(p.precio_menor) || 0,
@@ -345,12 +353,19 @@ export default function NuevaVenta() {
             fracciones:          p.fracciones || [],
           }
       ));
-      setTurnoActivo(turnoRes.data); // null si no hay turno abierto
-    } catch {
-      mostrarToast('error', 'Error al cargar datos del POS');
-    } finally {
-      setCargando(false);
+    } else {
+      mostrarToast('error', posRes.reason?.response?.data?.error || 'Error al cargar productos del POS');
     }
+
+    if (turnoRes.status === 'fulfilled') {
+      setTurnoActivo(turnoRes.value.data); // null si no hay turno abierto
+    } else {
+      // Distinto de "sin turno": la consulta falló (permisos, red, servidor).
+      // No asumir "Caja cerrada" cuando en realidad no se pudo verificar.
+      setErrorTurno(turnoRes.reason?.response?.data?.error || turnoRes.reason?.message || 'No se pudo verificar el turno de caja');
+    }
+
+    setCargando(false);
   };
 
   const productosFiltrados = useMemo(() => {
@@ -591,6 +606,26 @@ export default function NuevaVenta() {
         <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
         <p className="text-zinc-500 text-sm">Cargando POS...</p>
       </div>
+    </div>
+  );
+
+  if (errorTurno) return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-50 dark:bg-zinc-950 gap-6 p-6">
+      <div className="w-16 h-16 rounded-2xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+        <svg className="w-9 h-9 text-red-500" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+        </svg>
+      </div>
+      <div className="text-center space-y-1">
+        <h2 className="text-xl font-bold text-zinc-800 dark:text-white">No se pudo verificar la caja</h2>
+        <p className="text-zinc-500 text-sm max-w-xs">{errorTurno}</p>
+      </div>
+      <button
+        onClick={() => { setCargando(true); cargarDatos(); }}
+        className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm transition-colors"
+      >
+        Reintentar
+      </button>
     </div>
   );
 
