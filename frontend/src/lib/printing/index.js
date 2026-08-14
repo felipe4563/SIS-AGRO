@@ -9,12 +9,15 @@ export function esAndroid(nav = navigator) {
 export async function imprimirTermica(venta, configuracion, { nav = navigator } = {}) {
   const bytes = await construirTicket(venta, configuracion);
 
-  if (soportaWebSerial(nav)) {
-    return imprimirPorWebSerial(bytes);
-  }
-
+  // Android primero: Chrome en algunos equipos expone `navigator.serial`
+  // sin backend real detrás, y el diálogo de Web Serial nunca encuentra
+  // el dispositivo. En Android siempre se usa RawBT.
   if (esAndroid(nav)) {
     return imprimirPorRawBT(bytes);
+  }
+
+  if (soportaWebSerial(nav)) {
+    return imprimirPorWebSerial(bytes);
   }
 
   throw new Error(

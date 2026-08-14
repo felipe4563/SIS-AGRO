@@ -49,6 +49,19 @@ describe('imprimirTermica', () => {
     expect(imprimirPorWebSerialMock).not.toHaveBeenCalled();
   });
 
+  it('usa RawBT en Android aunque navigator.serial exista sin backend real (bug real observado)', async () => {
+    // Algunos Chrome de Android exponen `navigator.serial` pero el diálogo
+    // de emparejamiento nunca encuentra el dispositivo ("No se encontraron
+    // dispositivos compatibles"). Android debe ir siempre por RawBT.
+    soportaWebSerialMock.mockReturnValue(true);
+    const navAndroid = { userAgent: 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/115.0' };
+
+    await imprimirTermica({ id_venta: 4 }, { nombre_empresa: 'W' }, { nav: navAndroid });
+
+    expect(imprimirPorRawBTMock).toHaveBeenCalledWith(new Uint8Array([1, 2, 3]));
+    expect(imprimirPorWebSerialMock).not.toHaveBeenCalled();
+  });
+
   it('lanza un error claro en escritorio sin Web Serial (Firefox/Safari en Windows), sin llamar a RawBT', async () => {
     soportaWebSerialMock.mockReturnValue(false);
     const navFirefoxWindows = {
